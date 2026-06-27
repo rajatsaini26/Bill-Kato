@@ -3,13 +3,18 @@ import * as SQLite from 'expo-sqlite';
 export function runMigrations(db: SQLite.SQLiteDatabase) {
   db.execSync(`
     CREATE TABLE IF NOT EXISTS shop_profile (
-      id          INTEGER PRIMARY KEY,
-      name        TEXT NOT NULL DEFAULT 'My Shop',
-      address     TEXT DEFAULT '',
-      phone       TEXT DEFAULT '',
-      gstin       TEXT DEFAULT '',
-      currency    TEXT DEFAULT 'INR',
-      created_at  TEXT DEFAULT (datetime('now', 'localtime'))
+      id              INTEGER PRIMARY KEY,
+      name            TEXT NOT NULL DEFAULT 'My Shop',
+      address         TEXT DEFAULT '',
+      phone           TEXT DEFAULT '',
+      gstin           TEXT DEFAULT '',
+      currency        TEXT DEFAULT 'INR',
+      bank_name       TEXT DEFAULT '',
+      account_number  TEXT DEFAULT '',
+      ifsc            TEXT DEFAULT '',
+      upi_id          TEXT DEFAULT '',
+      logo_uri        TEXT DEFAULT '',
+      created_at      TEXT DEFAULT (datetime('now', 'localtime'))
     );
 
     INSERT OR IGNORE INTO shop_profile (id, name) VALUES (1, 'My Shop');
@@ -66,6 +71,14 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
       line_total      REAL NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS inventory_items (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_name       TEXT NOT NULL UNIQUE,
+      unit            TEXT DEFAULT 'pcs',
+      current_stock   REAL NOT NULL DEFAULT 0,
+      default_price   REAL NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS backup_log (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       backed_up_at  TEXT DEFAULT (datetime('now', 'localtime')),
@@ -73,4 +86,21 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
       status        TEXT DEFAULT 'pending'
     );
   `);
+
+  // Migrate existing databases to add missing columns (ignore errors if columns exist)
+  const columnsToAdd = [
+    'bank_name TEXT DEFAULT ""',
+    'account_number TEXT DEFAULT ""',
+    'ifsc TEXT DEFAULT ""',
+    'upi_id TEXT DEFAULT ""',
+    'logo_uri TEXT DEFAULT ""'
+  ];
+
+  for (const col of columnsToAdd) {
+    try {
+      db.execSync(`ALTER TABLE shop_profile ADD COLUMN ${col};`);
+    } catch (e) {
+      // Ignore if column already exists
+    }
+  }
 }

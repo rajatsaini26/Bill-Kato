@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator,
+  StyleSheet, Alert, ActivityIndicator, Image
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors, Spacing, FontSize } from '../constants/theme';
 import { useAppStore } from '../store/useAppStore';
 import { useGoogleAuth, backupToDrive } from '../services/driveBackup';
@@ -14,6 +15,11 @@ interface ShopProfile {
   phone: string;
   gstin: string;
   currency: string;
+  bank_name: string;
+  account_number: string;
+  ifsc: string;
+  upi_id: string;
+  logo_uri: string;
 }
 
 interface BackupLog {
@@ -24,8 +30,11 @@ interface BackupLog {
 }
 
 export default function SettingsScreen() {
-  const { setShopName, setDriveAccessToken, driveAccessToken } = useAppStore();
-  const [profile, setProfile] = useState<ShopProfile>({ name: 'My Shop', address: '', phone: '', gstin: '', currency: 'INR' });
+  const { setShopName, setDriveAccessToken, driveAccessToken, setIsLoggedIn } = useAppStore();
+  const [profile, setProfile] = useState<ShopProfile>({
+    name: 'My Shop', address: '', phone: '', gstin: '', currency: 'INR',
+    bank_name: '', account_number: '', ifsc: '', upi_id: '', logo_uri: ''
+  });
   const [backupLogs, setBackupLogs] = useState<BackupLog[]>([]);
   const [saving, setSaving] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
@@ -49,7 +58,7 @@ export default function SettingsScreen() {
 
   const loadProfile = () => {
     try {
-      const row = db.getFirstSync<ShopProfile>(`SELECT name, address, phone, gstin, currency FROM shop_profile WHERE id = 1`);
+      const row = db.getFirstSync<ShopProfile>(`SELECT name, address, phone, gstin, currency, bank_name, account_number, ifsc, upi_id, logo_uri FROM shop_profile WHERE id = 1`);
       if (row) {
         setProfile(row);
         setShopName(row.name);
@@ -64,7 +73,20 @@ export default function SettingsScreen() {
       const logs = db.getAllSync<BackupLog>(`SELECT * FROM backup_log ORDER BY backed_up_at DESC LIMIT 10`);
       setBackupLogs(logs);
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      console.log('No backup logs table or error:', e.message);
+    }
+  };
+
+  const pickLogo = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      setProfile({ ...profile, logo_uri: result.assets[0].uri });
     }
   };
 
@@ -73,8 +95,8 @@ export default function SettingsScreen() {
     setSaving(true);
     try {
       db.runSync(
-        `UPDATE shop_profile SET name = ?, address = ?, phone = ?, gstin = ?, currency = ? WHERE id = 1`,
-        [profile.name, profile.address, profile.phone, profile.gstin, profile.currency]
+        `UPDATE shop_profile SET name = ?, address = ?, phone = ?, gstin = ?, currency = ?, bank_name = ?, account_number = ?, ifsc = ?, upi_id = ?, logo_uri = ? WHERE id = 1`,
+        [profile.name, profile.address, profile.phone, profile.gstin, profile.currency, profile.bank_name, profile.account_number, profile.ifsc, profile.upi_id, profile.logo_uri]
       );
       setShopName(profile.name);
       Alert.alert('Saved', 'Shop profile updated');
@@ -107,6 +129,16 @@ export default function SettingsScreen() {
       {/* Shop Profile */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🏪 Shop Profile</Text>
+
+        <Text style={styles.label}>Shop Logo</Text>
+        <TouchableOpacity style={styles.logoPicker} onPress={pickLogo}>
+          {profile.logo_uri ? (
+            <Image source={{ uri: profile.logo_uri }} style={styles.logoImage} />
+          ) : (
+            <Text style={styles.logoPlaceholderText}>Select Logo</Text>
+          )}
+        </TouchableOpacity>
+
         <Text style={styles.label}>Shop Name *</Text>
         <TextInput style={styles.input} value={profile.name} onChangeText={(v) => setProfile({ ...profile, name: v })} placeholder="My Shop" />
         <Text style={styles.label}>Address</Text>
@@ -115,6 +147,19 @@ export default function SettingsScreen() {
         <TextInput style={styles.input} value={profile.phone} onChangeText={(v) => setProfile({ ...profile, phone: v })} placeholder="Phone Number" keyboardType="phone-pad" />
         <Text style={styles.label}>GSTIN</Text>
         <TextInput style={styles.input} value={profile.gstin} onChangeText={(v) => setProfile({ ...profile, gstin: v })} placeholder="GST Number" autoCapitalize="characters" />
+        
+        <View style={styles.divider} />
+        <Text style={styles.sectionTitle}>🏦 Bank & UPI Details</Text>
+        <Text style={styles.label}>Bank Name</Text>
+        <TextInput style={styles.input} value={profile.bank_name} onChangeText={(v) => setProfile({ ...profile, bank_name: v })} placeholder="e.g. HDFC Bank" />
+        <Text style={styles.label}>Account Number</Text>
+        <TextInput style={styles.input} value={profile.account_number} onChangeText={(v) => setProfile({ ...profile, account_number: v })} placeholder="Account No." keyboardType="numeric" />
+        <Text style={styles.label}>IFSC Code</Text>
+        <TextInput style={styles.input} value={profile.ifsc} onChangeText={(v) => setProfile({ ...profile, ifsc: v })} placeholder="IFSC Code" autoCapitalize="characters" />
+        <Text style={styles.label}>UPI ID (for QR Scanner)</Text>
+        <TextInput style={styles.input} value={profile.upi_id} onChangeText={(v) => setProfile({ ...profile, upi_id: v })} placeholder="example@upi" />
+
+        <View style={styles.divider} />
         <Text style={styles.label}>Currency</Text>
         <View style={styles.currencyRow}>
           {['INR', 'USD', 'EUR', 'GBP'].map((c) => (
@@ -127,6 +172,7 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
         <TouchableOpacity style={styles.saveBtn} onPress={saveProfile} disabled={saving}>
           {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Profile</Text>}
         </TouchableOpacity>
@@ -174,6 +220,13 @@ export default function SettingsScreen() {
           </>
         )}
       </View>
+
+      <TouchableOpacity
+        style={styles.logoutBtn}
+        onPress={() => setIsLoggedIn(false)}
+      >
+        <Text style={styles.logoutBtnText}>Logout</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -187,6 +240,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 10,
     fontSize: FontSize.sm, color: Colors.textPrimary, backgroundColor: Colors.background, marginBottom: Spacing.sm,
   },
+  logoPicker: {
+    width: 80, height: 80, borderRadius: 40, backgroundColor: '#e5e7eb',
+    justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.md, overflow: 'hidden'
+  },
+  logoImage: { width: '100%', height: '100%' },
+  logoPlaceholderText: { fontSize: 10, color: '#6b7280', textAlign: 'center' },
+  divider: { height: 1, backgroundColor: Colors.border, marginVertical: Spacing.md },
   currencyRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
   currencyBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
   currencyBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
@@ -203,4 +263,6 @@ const styles = StyleSheet.create({
   logDot: { width: 8, height: 8, borderRadius: 4 },
   logDate: { fontSize: FontSize.xs, color: Colors.textSecondary },
   logStatus: { fontSize: FontSize.xs, fontWeight: '700', textTransform: 'capitalize' },
+  logoutBtn: { margin: Spacing.md, padding: Spacing.md, alignItems: 'center' },
+  logoutBtnText: { color: Colors.danger, fontWeight: '700', fontSize: FontSize.md },
 });

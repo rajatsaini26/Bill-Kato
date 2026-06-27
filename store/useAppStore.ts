@@ -5,6 +5,8 @@ interface AppState {
   setShopName: (name: string) => void;
   driveAccessToken: string | null;
   setDriveAccessToken: (token: string | null) => void;
+  isLoggedIn: boolean;
+  setIsLoggedIn: (val: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -12,4 +14,6 @@ export const useAppStore = create<AppState>((set) => ({
   setShopName: (name) => set({ shopName: name }),
   driveAccessToken: null,
   setDriveAccessToken: (token) => set({ driveAccessToken: token }),
+  isLoggedIn: false,
+  setIsLoggedIn: (val) => set({ isLoggedIn: val }),
 }));

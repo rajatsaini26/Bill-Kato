@@ -1,7 +1,7 @@
 {
   "name": "bill-kato",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "expo-router/entry",
   "dependencies": {
     "@react-navigation/bottom-tabs": "^7.18.3",
     "@react-navigation/native": "^7.3.4",
@@ -11,7 +11,9 @@
     "expo-auth-session": "~56.0.14",
     "expo-constants": "~56.0.18",
     "expo-crypto": "~56.0.4",
+    "expo-dev-client": "~56.0.20",
     "expo-file-system": "~56.0.8",
+    "expo-image-picker": "~56.0.18",
     "expo-print": "~56.0.4",
     "expo-router": "~56.2.11",
     "expo-sharing": "~56.0.18",
