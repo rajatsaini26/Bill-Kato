@@ -7,7 +7,7 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import '../db/client';
 
 GoogleSignin.configure({
-  scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+  scopes: ['https://www.googleapis.com/auth/drive.file'],
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
 });
 
