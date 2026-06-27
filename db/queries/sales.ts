@@ -68,6 +68,12 @@ export function createSaleInvoice(data: CreateSaleInvoiceInput): number {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [invoiceId, item.item_name, item.quantity, item.unit, item.unit_price, item.discount_pct, item.line_total, item.cost_price]
     );
+    db.runSync(
+      `INSERT INTO inventory_items (item_name, unit, current_stock, default_price)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(item_name) DO UPDATE SET current_stock = current_stock - ?`,
+      [item.item_name, item.unit, -item.quantity, item.unit_price, item.quantity]
+    );
   }
   return invoiceId as number;
 }

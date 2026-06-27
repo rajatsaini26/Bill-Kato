@@ -60,6 +60,12 @@ export function createPurchaseInvoice(data: CreatePurchaseInvoiceInput): number 
        VALUES (?, ?, ?, ?, ?, ?)`,
       [invoiceId, item.item_name, item.quantity, item.unit, item.unit_cost, item.line_total]
     );
+    db.runSync(
+      `INSERT INTO inventory_items (item_name, unit, current_stock, default_price)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(item_name) DO UPDATE SET current_stock = current_stock + ?`,
+      [item.item_name, item.unit, item.quantity, item.unit_cost, item.quantity]
+    );
   }
   return invoiceId as number;
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator,
@@ -19,6 +19,13 @@ interface Item {
   unit_cost: string;
 }
 
+interface InventoryItem {
+  id: number;
+  item_name: string;
+  unit: string;
+  default_price: number;
+}
+
 const emptyItem = (): Item => ({ item_name: '', quantity: '', unit: 'pcs', unit_cost: '' });
 
 export default function CreatePurchaseInvoiceScreen() {
@@ -29,13 +36,36 @@ export default function CreatePurchaseInvoiceScreen() {
   const [taxPct, setTaxPct] = useState('0');
   const [items, setItems] = useState<Item[]>([emptyItem()]);
   const [loading, setLoading] = useState(false);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [focusedItemIndex, setFocusedItemIndex] = useState<number | null>(null);
 
   const invoiceDate = toStorableDate();
+
+  useEffect(() => {
+    try {
+      const result = db.getAllSync<InventoryItem>(`SELECT * FROM inventory_items`);
+      setInventory(result);
+    } catch (e) {
+      console.log('Error loading inventory', e);
+    }
+  }, []);
 
   const updateItem = (index: number, field: keyof Item, value: string) => {
     const updated = [...items];
     updated[index] = { ...updated[index], [field]: value };
     setItems(updated);
+  };
+
+  const selectSuggestedItem = (index: number, invItem: InventoryItem) => {
+    const updated = [...items];
+    updated[index] = {
+      ...updated[index],
+      item_name: invItem.item_name,
+      unit: invItem.unit,
+      unit_cost: invItem.default_price.toString(),
+    };
+    setItems(updated);
+    setFocusedItemIndex(null);
   };
 
   const addItem = () => setItems([...items, emptyItem()]);
@@ -119,8 +149,8 @@ export default function CreatePurchaseInvoiceScreen() {
       {/* Vendor Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Vendor Details</Text>
-        <TextInput style={styles.input} placeholder="Vendor Name (optional)" value={vendorName} onChangeText={setVendorName} />
-        <TextInput style={styles.input} placeholder="Vendor Phone (optional)" value={vendorPhone} onChangeText={setVendorPhone} keyboardType="phone-pad" />
+        <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Vendor Name (optional)" value={vendorName} onChangeText={setVendorName} />
+        <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Vendor Phone (optional)" value={vendorPhone} onChangeText={setVendorPhone} keyboardType="phone-pad" />
         <View style={styles.dateRow}>
           <Text style={styles.dateLabel}>Invoice Date:</Text>
           <Text style={styles.dateValue}>{toDisplayDate(invoiceDate)}</Text>
@@ -130,27 +160,51 @@ export default function CreatePurchaseInvoiceScreen() {
       {/* Items */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Items</Text>
-        {items.map((item, index) => (
-          <View key={index} style={styles.itemCard}>
-            <View style={styles.itemHeader}>
-              <Text style={styles.itemIndex}>Item {index + 1}</Text>
-              {items.length > 1 && (
-                <TouchableOpacity onPress={() => removeItem(index)}>
-                  <Text style={{ color: Colors.danger, fontSize: 18 }}>🗑</Text>
-                </TouchableOpacity>
+        {items.map((item, index) => {
+          const suggestions = inventory.filter(inv => inv.item_name.toLowerCase().includes(item.item_name.toLowerCase()) && item.item_name.length > 0 && inv.item_name !== item.item_name);
+          return (
+            <View key={index} style={styles.itemCard}>
+              <View style={styles.itemHeader}>
+                <Text style={styles.itemIndex}>Item {index + 1}</Text>
+                {items.length > 1 && (
+                  <TouchableOpacity onPress={() => removeItem(index)}>
+                    <Text style={{ color: Colors.danger, fontSize: 18 }}>🗑</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TextInput 
+                style={styles.input} 
+                placeholderTextColor="#000000" 
+                placeholder="Item Name *" 
+                value={item.item_name} 
+                onChangeText={(v) => updateItem(index, 'item_name', v)} 
+                onFocus={() => setFocusedItemIndex(index)}
+                onBlur={() => setTimeout(() => setFocusedItemIndex(null), 200)}
+              />
+
+              {focusedItemIndex === index && suggestions.length > 0 && (
+                <View style={styles.suggestionsContainer}>
+                  {suggestions.slice(0, 3).map(sugg => (
+                    <TouchableOpacity key={sugg.id} style={styles.suggestionItem} onPress={() => selectSuggestedItem(index, sugg)}>
+                      <Text style={styles.suggestionText}>{sugg.item_name}</Text>
+                      <Text style={styles.suggestionSubText}>₹{sugg.default_price} | {sugg.unit}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               )}
+
+              <View style={styles.row}>
+                <TextInput style={[styles.input, styles.flex1]} placeholderTextColor="#000000" placeholder="Qty *" value={item.quantity} onChangeText={(v) => updateItem(index, 'quantity', v)} keyboardType="decimal-pad" />
+                <TextInput style={[styles.input, styles.flex1]} placeholderTextColor="#000000" placeholder="Unit" value={item.unit} onChangeText={(v) => updateItem(index, 'unit', v)} />
+              </View>
+              <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Unit Cost ₹ *" value={item.unit_cost} onChangeText={(v) => updateItem(index, 'unit_cost', v)} keyboardType="decimal-pad" />
+              <Text style={styles.lineTotal}>
+                Line Total: ₹{((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_cost) || 0)).toFixed(2)}
+              </Text>
             </View>
-            <TextInput style={styles.input} placeholder="Item Name *" value={item.item_name} onChangeText={(v) => updateItem(index, 'item_name', v)} />
-            <View style={styles.row}>
-              <TextInput style={[styles.input, styles.flex1]} placeholder="Qty *" value={item.quantity} onChangeText={(v) => updateItem(index, 'quantity', v)} keyboardType="decimal-pad" />
-              <TextInput style={[styles.input, styles.flex1]} placeholder="Unit" value={item.unit} onChangeText={(v) => updateItem(index, 'unit', v)} />
-            </View>
-            <TextInput style={styles.input} placeholder="Unit Cost ₹ *" value={item.unit_cost} onChangeText={(v) => updateItem(index, 'unit_cost', v)} keyboardType="decimal-pad" />
-            <Text style={styles.lineTotal}>
-              Line Total: ₹{((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_cost) || 0)).toFixed(2)}
-            </Text>
-          </View>
-        ))}
+          );
+        })}
         <TouchableOpacity style={styles.addItemBtn} onPress={addItem}>
           <Text style={styles.addItemText}>＋ Add Item</Text>
         </TouchableOpacity>
@@ -161,6 +215,7 @@ export default function CreatePurchaseInvoiceScreen() {
         <Text style={styles.sectionTitle}>Notes</Text>
         <TextInput
           style={[styles.input, { height: 70, textAlignVertical: 'top' }]}
+          placeholderTextColor="#000000"
           placeholder="Notes (optional)"
           value={notes}
           onChangeText={setNotes}
@@ -208,7 +263,7 @@ const styles = StyleSheet.create({
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dateLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   dateValue: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: '600' },
-  itemCard: { borderWidth: 1, borderColor: Colors.border, borderRadius: 10, padding: Spacing.sm, marginBottom: Spacing.sm, backgroundColor: Colors.background },
+  itemCard: { borderWidth: 1, borderColor: Colors.border, borderRadius: 10, padding: Spacing.sm, marginBottom: Spacing.sm, backgroundColor: Colors.background, zIndex: 1 },
   itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   itemIndex: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.success },
   row: { flexDirection: 'row', gap: Spacing.sm },
@@ -216,6 +271,10 @@ const styles = StyleSheet.create({
   lineTotal: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.success, textAlign: 'right' },
   addItemBtn: { borderWidth: 1.5, borderColor: Colors.success, borderRadius: 8, padding: 10, alignItems: 'center', borderStyle: 'dashed' },
   addItemText: { color: Colors.success, fontWeight: '700', fontSize: FontSize.sm },
+  suggestionsContainer: { backgroundColor: '#f9fafb', borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', marginBottom: Spacing.sm, marginTop: -Spacing.sm, elevation: 2 },
+  suggestionItem: { padding: 10, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', flexDirection: 'row', justifyContent: 'space-between' },
+  suggestionText: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: '600' },
+  suggestionSubText: { fontSize: FontSize.xs, color: Colors.textSecondary },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   totalLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   totalValue: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },

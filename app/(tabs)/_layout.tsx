@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Tabs, useRouter } from 'react-native-router-flux'; // wait expo-router
+import { Tabs, useRouter } from 'expo-router';
 import { TouchableOpacity, Text, View, StyleSheet, Modal, TouchableWithoutFeedback } from 'react-native';
-import { useRouter as useExpoRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
@@ -18,7 +17,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
 }
 
 export default function TabsLayout() {
-  const router = useExpoRouter();
+  const router = useRouter();
   const [menuVisible, setMenuVisible] = useState(false);
 
   return (
