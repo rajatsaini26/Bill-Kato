@@ -3,9 +3,9 @@ import {
   View, Text, TextInput, ScrollView, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors, Spacing, FontSize } from '../../../constants/theme';
-import { createPurchaseInvoice } from '../../../db/queries/purchases';
+import { createPurchaseInvoice, updatePurchaseInvoice, getPurchaseInvoiceById, getVendorSuggestions } from '../../../db/queries/purchases';
 import { toStorableDate, toDisplayDate } from '../../../utils/dateFormat';
 import { nextInvoiceNumber } from '../../../utils/invoiceNumber';
 import { buildPurchaseInvoiceHTML } from '../../../services/pdfTemplate';
@@ -30,25 +30,69 @@ const emptyItem = (): Item => ({ item_name: '', quantity: '', unit: 'pcs', unit_
 
 export default function CreatePurchaseInvoiceScreen() {
   const router = useRouter();
+  const { editId } = useLocalSearchParams<{ editId: string }>();
+
   const [vendorName, setVendorName] = useState('');
   const [vendorPhone, setVendorPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [taxPct, setTaxPct] = useState('0');
+  const [paymentStatus, setPaymentStatus] = useState<'Paid' | 'Unpaid' | 'Partial'>('Paid');
+  const [amountPaid, setAmountPaid] = useState('');
+
   const [items, setItems] = useState<Item[]>([emptyItem()]);
   const [loading, setLoading] = useState(false);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [focusedItemIndex, setFocusedItemIndex] = useState<number | null>(null);
 
-  const invoiceDate = toStorableDate();
+  const [vendorSuggestions, setVendorSuggestions] = useState<string[]>([]);
+  const [showVendorSuggestions, setShowVendorSuggestions] = useState(false);
+
+  const [invoiceDate, setInvoiceDate] = useState(toStorableDate());
+  const [editInvoiceNumber, setEditInvoiceNumber] = useState('');
 
   useEffect(() => {
     try {
       const result = db.getAllSync<InventoryItem>(`SELECT * FROM inventory_items`);
       setInventory(result);
+
+      if (editId) {
+        const inv = getPurchaseInvoiceById(Number(editId));
+        if (inv) {
+          setEditInvoiceNumber(inv.invoice_number);
+          setVendorName(inv.vendor_name);
+          setVendorPhone(inv.vendor_phone);
+          setInvoiceDate(inv.invoice_date);
+          setNotes(inv.notes);
+          setPaymentStatus(inv.payment_status as any || 'Paid');
+          setAmountPaid(inv.amount_paid > 0 ? inv.amount_paid.toString() : '');
+          setTaxPct(inv.subtotal > 0 ? ((inv.tax_amount / inv.subtotal) * 100).toFixed(2).replace(/\.00$/, '') : '0');
+          setItems(inv.items.map(i => ({
+            item_name: i.item_name,
+            quantity: i.quantity.toString(),
+            unit: i.unit,
+            unit_cost: i.unit_cost.toString(),
+          })));
+        }
+      }
     } catch (e) {
-      console.log('Error loading inventory', e);
+      console.log('Error loading data', e);
     }
-  }, []);
+  }, [editId]);
+
+  const handleVendorNameChange = (val: string) => {
+    setVendorName(val);
+    if (val.length > 1) {
+      setVendorSuggestions(getVendorSuggestions(val));
+      setShowVendorSuggestions(true);
+    } else {
+      setShowVendorSuggestions(false);
+    }
+  };
+
+  const selectVendor = (name: string) => {
+    setVendorName(name);
+    setShowVendorSuggestions(false);
+  };
 
   const updateItem = (index: number, field: keyof Item, value: string) => {
     const updated = [...items];
@@ -102,7 +146,9 @@ export default function CreatePurchaseInvoiceScreen() {
     if (!validate()) return;
     setLoading(true);
     try {
-      const invoiceNumber = nextInvoiceNumber('PUR');
+      const invoiceNumber = editId ? editInvoiceNumber : nextInvoiceNumber('PUR');
+      const finalAmountPaid = paymentStatus === 'Paid' ? grandTotal : paymentStatus === 'Unpaid' ? 0 : parseFloat(amountPaid) || 0;
+
       const itemsData = computedItems.map((i) => ({
         item_name: i.item_name,
         quantity: i.qty,
@@ -110,7 +156,8 @@ export default function CreatePurchaseInvoiceScreen() {
         unit_cost: i.cost,
         line_total: i.lineTotal,
       }));
-      const id = createPurchaseInvoice({
+
+      const payload = {
         invoice_number: invoiceNumber,
         vendor_name: vendorName,
         vendor_phone: vendorPhone,
@@ -119,13 +166,23 @@ export default function CreatePurchaseInvoiceScreen() {
         tax_amount: taxAmt,
         total: grandTotal,
         notes,
+        amount_paid: finalAmountPaid,
+        payment_status: paymentStatus,
         items: itemsData,
-      });
+      };
+
+      let id = Number(editId);
+      if (editId) {
+        updatePurchaseInvoice(id, payload);
+      } else {
+        id = createPurchaseInvoice(payload);
+      }
+
       if (share) {
         const fullInv = {
           id, invoice_number: invoiceNumber, vendor_name: vendorName, vendor_phone: vendorPhone,
           invoice_date: invoiceDate, subtotal, tax_amount: taxAmt, total: grandTotal,
-          notes, pdf_uri: '', created_at: invoiceDate,
+          notes, pdf_uri: '', amount_paid: finalAmountPaid, payment_status: paymentStatus, created_at: invoiceDate,
           items: itemsData.map((it, idx) => ({ ...it, id: idx, invoice_id: id })),
         };
         const shop = getShop();
@@ -149,7 +206,24 @@ export default function CreatePurchaseInvoiceScreen() {
       {/* Vendor Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Vendor Details</Text>
-        <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Vendor Name (optional)" value={vendorName} onChangeText={setVendorName} />
+        <View style={{ zIndex: 10 }}>
+          <TextInput 
+            style={styles.input} 
+            placeholderTextColor="#000000" 
+            placeholder="Vendor Name (optional)" 
+            value={vendorName} 
+            onChangeText={handleVendorNameChange} 
+          />
+          {showVendorSuggestions && vendorSuggestions.length > 0 && (
+            <View style={styles.suggestionsContainer}>
+              {vendorSuggestions.map(sugg => (
+                <TouchableOpacity key={sugg} style={styles.suggestionItem} onPress={() => selectVendor(sugg)}>
+                  <Text style={styles.suggestionText}>{sugg}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
         <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Vendor Phone (optional)" value={vendorPhone} onChangeText={setVendorPhone} keyboardType="phone-pad" />
         <View style={styles.dateRow}>
           <Text style={styles.dateLabel}>Invoice Date:</Text>
@@ -238,6 +312,35 @@ export default function CreatePurchaseInvoiceScreen() {
         </View>
       </View>
 
+      {/* Status */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Payment Status</Text>
+        <View style={styles.statusRow}>
+          {(['Paid', 'Unpaid', 'Partial'] as const).map((s) => (
+            <TouchableOpacity
+              key={s}
+              onPress={() => setPaymentStatus(s)}
+              style={[styles.statusBtn, paymentStatus === s && statusBtnActive(s)]}
+            >
+              <Text style={[styles.statusBtnText, paymentStatus === s && { color: '#fff' }]}>{s}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        
+        {paymentStatus === 'Partial' && (
+          <View style={{ marginTop: Spacing.sm }}>
+            <TextInput 
+              style={[styles.input, { borderColor: Colors.warning, borderWidth: 1.5 }]} 
+              placeholderTextColor="#000000" 
+              placeholder="Amount Paid ₹" 
+              value={amountPaid} 
+              onChangeText={setAmountPaid} 
+              keyboardType="decimal-pad" 
+            />
+          </View>
+        )}
+      </View>
+
       {/* Buttons */}
       <View style={styles.btnRow}>
         <TouchableOpacity style={styles.btnSave} onPress={() => save(false)} disabled={loading}>
@@ -250,6 +353,11 @@ export default function CreatePurchaseInvoiceScreen() {
     </ScrollView>
   );
 }
+
+const statusBtnActive = (s: string) => ({
+  backgroundColor: s === 'Paid' ? Colors.success : s === 'Unpaid' ? Colors.danger : Colors.warning,
+  borderColor: 'transparent',
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
@@ -283,6 +391,9 @@ const styles = StyleSheet.create({
   grandTotalRow: { borderTopWidth: 1, borderTopColor: Colors.border, marginTop: 6, paddingTop: 6 },
   grandTotalLabel: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
   grandTotalValue: { fontSize: FontSize.lg, fontWeight: '800' },
+  statusRow: { flexDirection: 'row', gap: Spacing.sm },
+  statusBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
+  statusBtnText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary },
   btnRow: { flexDirection: 'row', gap: Spacing.sm, margin: Spacing.md },
   btnSave: { flex: 1, backgroundColor: Colors.textSecondary, borderRadius: 10, padding: Spacing.md, alignItems: 'center' },
   btnShare: { flex: 1, backgroundColor: Colors.success, borderRadius: 10, padding: Spacing.md, alignItems: 'center' },

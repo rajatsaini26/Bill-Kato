@@ -3,9 +3,9 @@ import {
   View, Text, TextInput, ScrollView, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator, FlatList
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Colors, Spacing, FontSize } from '../../../constants/theme';
-import { createSaleInvoice } from '../../../db/queries/sales';
+import { createSaleInvoice, updateSaleInvoice, getSaleInvoiceById, getCustomerSuggestions } from '../../../db/queries/sales';
 import { toStorableDate, toDisplayDate } from '../../../utils/dateFormat';
 import { nextInvoiceNumber } from '../../../utils/invoiceNumber';
 import { calcLineTotals } from '../../../utils/pnl';
@@ -35,26 +35,71 @@ const emptyItem = (): Item => ({
 
 export default function CreateSaleInvoiceScreen() {
   const router = useRouter();
+  const { editId } = useLocalSearchParams<{ editId: string }>();
+  
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [taxPct, setTaxPct] = useState('0');
-  const [status, setStatus] = useState<'paid' | 'unpaid' | 'partial'>('paid');
+  const [paymentStatus, setPaymentStatus] = useState<'Paid' | 'Unpaid' | 'Partial'>('Paid');
+  const [amountPaid, setAmountPaid] = useState('');
+  
   const [items, setItems] = useState<Item[]>([emptyItem()]);
   const [loading, setLoading] = useState(false);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [focusedItemIndex, setFocusedItemIndex] = useState<number | null>(null);
-
-  const invoiceDate = toStorableDate();
+  
+  const [customerSuggestions, setCustomerSuggestions] = useState<string[]>([]);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  
+  const [invoiceDate, setInvoiceDate] = useState(toStorableDate());
+  const [editInvoiceNumber, setEditInvoiceNumber] = useState('');
 
   useEffect(() => {
     try {
       const result = db.getAllSync<InventoryItem>(`SELECT * FROM inventory_items`);
       setInventory(result);
+
+      if (editId) {
+        const inv = getSaleInvoiceById(Number(editId));
+        if (inv) {
+          setEditInvoiceNumber(inv.invoice_number);
+          setCustomerName(inv.customer_name);
+          setCustomerPhone(inv.customer_phone);
+          setInvoiceDate(inv.invoice_date);
+          setNotes(inv.notes);
+          setPaymentStatus(inv.payment_status as any || 'Paid');
+          setAmountPaid(inv.amount_paid > 0 ? inv.amount_paid.toString() : '');
+          setTaxPct(inv.subtotal > 0 ? ((inv.tax_amount / inv.subtotal) * 100).toFixed(2).replace(/\.00$/, '') : '0');
+          setItems(inv.items.map(i => ({
+            item_name: i.item_name,
+            quantity: i.quantity.toString(),
+            unit: i.unit,
+            unit_price: i.unit_price.toString(),
+            cost_price: i.cost_price.toString(),
+            discount_pct: i.discount_pct.toString(),
+          })));
+        }
+      }
     } catch (e) {
-      console.log('Error loading inventory', e);
+      console.log('Error loading data', e);
     }
-  }, []);
+  }, [editId]);
+
+  const handleCustomerNameChange = (val: string) => {
+    setCustomerName(val);
+    if (val.length > 1) {
+      setCustomerSuggestions(getCustomerSuggestions(val));
+      setShowCustomerSuggestions(true);
+    } else {
+      setShowCustomerSuggestions(false);
+    }
+  };
+
+  const selectCustomer = (name: string) => {
+    setCustomerName(name);
+    setShowCustomerSuggestions(false);
+  };
 
   const updateItem = (index: number, field: keyof Item, value: string) => {
     const updated = [...items];
@@ -113,7 +158,9 @@ export default function CreateSaleInvoiceScreen() {
     if (!validate()) return;
     setLoading(true);
     try {
-      const invoiceNumber = nextInvoiceNumber('SALE');
+      const invoiceNumber = editId ? editInvoiceNumber : nextInvoiceNumber('SALE');
+      const finalAmountPaid = paymentStatus === 'Paid' ? grandTotal : paymentStatus === 'Unpaid' ? 0 : parseFloat(amountPaid) || 0;
+      
       const itemsData = computedItems.map((i) => ({
         item_name: i.item_name,
         quantity: i.qty,
@@ -123,7 +170,8 @@ export default function CreateSaleInvoiceScreen() {
         line_total: i.lineTotal,
         cost_price: i.cost,
       }));
-      const id = createSaleInvoice({
+      
+      const payload = {
         invoice_number: invoiceNumber,
         customer_name: customerName,
         customer_phone: customerPhone,
@@ -133,11 +181,21 @@ export default function CreateSaleInvoiceScreen() {
         tax_amount: taxAmt,
         total: grandTotal,
         notes,
-        status,
+        status: paymentStatus.toLowerCase(),
+        amount_paid: finalAmountPaid,
+        payment_status: paymentStatus,
         items: itemsData,
-      });
+      };
+
+      let id = Number(editId);
+      if (editId) {
+        updateSaleInvoice(id, payload);
+      } else {
+        id = createSaleInvoice(payload);
+      }
+      
       if (share) {
-        const full = { ...getInvoiceForPdf(id, invoiceNumber), items: itemsData.map((it, idx) => ({ ...it, id: idx, invoice_id: id })) };
+        const full = { ...getInvoiceForPdf(id, invoiceNumber, finalAmountPaid), items: itemsData.map((it, idx) => ({ ...it, id: idx, invoice_id: id })) };
         const shop = getShop();
         const html = buildSaleInvoiceHTML(full as any, shop);
         try {
@@ -154,7 +212,7 @@ export default function CreateSaleInvoiceScreen() {
     }
   };
 
-  const getInvoiceForPdf = (id: number, invoiceNumber: string) => ({
+  const getInvoiceForPdf = (id: number, invoiceNumber: string, finalAmountPaid: number) => ({
     id,
     invoice_number: invoiceNumber,
     customer_name: customerName,
@@ -165,7 +223,9 @@ export default function CreateSaleInvoiceScreen() {
     tax_amount: taxAmt,
     total: grandTotal,
     notes,
-    status,
+    status: paymentStatus.toLowerCase(),
+    amount_paid: finalAmountPaid,
+    payment_status: paymentStatus,
     pdf_uri: '',
     created_at: invoiceDate,
   });
@@ -175,7 +235,24 @@ export default function CreateSaleInvoiceScreen() {
       {/* Customer Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Customer Details</Text>
-        <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Customer Name (optional)" value={customerName} onChangeText={setCustomerName} />
+        <View style={{ zIndex: 10 }}>
+          <TextInput 
+            style={styles.input} 
+            placeholderTextColor="#000000" 
+            placeholder="Customer Name (optional)" 
+            value={customerName} 
+            onChangeText={handleCustomerNameChange} 
+          />
+          {showCustomerSuggestions && customerSuggestions.length > 0 && (
+            <View style={styles.suggestionsContainer}>
+              {customerSuggestions.map(sugg => (
+                <TouchableOpacity key={sugg} style={styles.suggestionItem} onPress={() => selectCustomer(sugg)}>
+                  <Text style={styles.suggestionText}>{sugg}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
         <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Customer Phone (optional)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" />
         <View style={styles.dateRow}>
           <Text style={styles.dateLabel}>Invoice Date:</Text>
@@ -273,16 +350,29 @@ export default function CreateSaleInvoiceScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Payment Status</Text>
         <View style={styles.statusRow}>
-          {(['paid', 'unpaid', 'partial'] as const).map((s) => (
+          {(['Paid', 'Unpaid', 'Partial'] as const).map((s) => (
             <TouchableOpacity
               key={s}
-              onPress={() => setStatus(s)}
-              style={[styles.statusBtn, status === s && statusBtnActive(s)]}
+              onPress={() => setPaymentStatus(s)}
+              style={[styles.statusBtn, paymentStatus === s && statusBtnActive(s)]}
             >
-              <Text style={[styles.statusBtnText, status === s && { color: '#fff' }]}>{s.toUpperCase()}</Text>
+              <Text style={[styles.statusBtnText, paymentStatus === s && { color: '#fff' }]}>{s}</Text>
             </TouchableOpacity>
           ))}
         </View>
+        
+        {paymentStatus === 'Partial' && (
+          <View style={{ marginTop: Spacing.sm }}>
+            <TextInput 
+              style={[styles.input, { borderColor: Colors.warning, borderWidth: 1.5 }]} 
+              placeholderTextColor="#000000" 
+              placeholder="Amount Paid ₹" 
+              value={amountPaid} 
+              onChangeText={setAmountPaid} 
+              keyboardType="decimal-pad" 
+            />
+          </View>
+        )}
       </View>
 
       {/* Buttons */}
@@ -299,7 +389,7 @@ export default function CreateSaleInvoiceScreen() {
 }
 
 const statusBtnActive = (s: string) => ({
-  backgroundColor: s === 'paid' ? Colors.success : s === 'unpaid' ? Colors.danger : Colors.warning,
+  backgroundColor: s === 'Paid' ? Colors.success : s === 'Unpaid' ? Colors.danger : Colors.warning,
   borderColor: 'transparent',
 });
 

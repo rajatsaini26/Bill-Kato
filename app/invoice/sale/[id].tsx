@@ -47,13 +47,17 @@ export default function SaleInvoiceDetailScreen() {
     setSharing(true);
     try {
       const shop = getShop();
-      const html = buildSaleInvoiceHTML(invoice, shop);
+      const html = await buildSaleInvoiceHTML(invoice, shop);
       await generateAndShareSalePDF(html, invoice.id);
     } catch (e: any) {
       Alert.alert('PDF Error', e.message);
     } finally {
       setSharing(false);
     }
+  };
+
+  const handleEdit = () => {
+    router.push(`/invoice/sale/create?editId=${invoice.id}`);
   };
 
   const handleDelete = () => {
@@ -81,9 +85,9 @@ export default function SaleInvoiceDetailScreen() {
             <Text style={styles.invoiceNo}>{invoice.invoice_number}</Text>
             <Text style={styles.date}>{toDisplayDate(invoice.invoice_date)}</Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[invoice.status] + '22' }]}>
-            <Text style={[styles.statusText, { color: STATUS_COLOR[invoice.status] }]}>
-              {invoice.status.toUpperCase()}
+          <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[invoice.payment_status?.toLowerCase()] || STATUS_COLOR.paid + '22' }]}>
+            <Text style={[styles.statusText, { color: STATUS_COLOR[invoice.payment_status?.toLowerCase()] || STATUS_COLOR.paid }]}>
+              {invoice.payment_status?.toUpperCase() || 'PAID'}
             </Text>
           </View>
         </View>
@@ -113,6 +117,12 @@ export default function SaleInvoiceDetailScreen() {
           <Text style={styles.grandLabel}>Total</Text>
           <Text style={styles.grandValue}>₹{invoice.total.toFixed(2)}</Text>
         </View>
+        {invoice.payment_status !== 'Paid' && (
+          <>
+            <View style={[styles.totalLine, { marginTop: 4 }]}><Text style={styles.totalLabel}>Amount Paid</Text><Text style={[styles.totalValue, { color: Colors.success }]}>₹{invoice.amount_paid.toFixed(2)}</Text></View>
+            <View style={styles.totalLine}><Text style={styles.totalLabel}>Balance Due</Text><Text style={[styles.totalValue, { color: Colors.danger }]}>₹{(invoice.total - invoice.amount_paid).toFixed(2)}</Text></View>
+          </>
+        )}
       </View>
 
       {/* P&L Panel */}
@@ -146,7 +156,10 @@ export default function SaleInvoiceDetailScreen() {
       {/* Actions */}
       <View style={styles.btnRow}>
         <TouchableOpacity style={styles.btnShare} onPress={handleShare} disabled={sharing}>
-          {sharing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>📤 Share PDF</Text>}
+          {sharing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>📤 PDF</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.btnShare, { backgroundColor: Colors.warning }]} onPress={handleEdit}>
+          <Text style={styles.btnText}>✏️ Edit</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.btnDelete} onPress={handleDelete}>
           <Text style={styles.btnText}>🗑 Delete</Text>

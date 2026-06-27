@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import { SaleInvoiceWithItems } from '../db/queries/sales';
 import { PurchaseInvoiceWithItems } from '../db/queries/purchases';
 import { toDisplayDate } from '../utils/dateFormat';
@@ -25,13 +26,23 @@ function fmt(amount: number, currency: string): string {
   return `${currencySymbol(currency)}${amount.toFixed(2)}`;
 }
 
-function getHeader(shop: ShopProfile, invoiceNumber: string, date: string, type: 'SALE' | 'PURCHASE', status?: string) {
+async function getBase64Image(uri?: string): Promise<string> {
+  if (!uri) return '';
+  try {
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    return `data:image/jpeg;base64,${base64}`;
+  } catch (e) {
+    return uri; // Fallback to raw URI if reading fails
+  }
+}
+
+function getHeader(shop: ShopProfile, logoBase64: string, invoiceNumber: string, date: string, type: 'SALE' | 'PURCHASE', status?: string) {
   const title = type === 'SALE' ? 'ESTIMATE' : 'PURCHASE RECORD';
   const color = type === 'SALE' ? '#1A56DB' : '#0E9F6E';
   return `
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
     <div style="display:flex;gap:16px;align-items:center;">
-      ${shop.logo_uri ? `<img src="${shop.logo_uri}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;" />` : ''}
+      ${logoBase64 ? `<img src="${logoBase64}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;" />` : ''}
       <div>
         <div style="font-size:22px;font-weight:700;color:${color};">${shop.name}</div>
         ${shop.address ? `<div style="margin-top:4px;color:#555;">${shop.address}</div>` : ''}
@@ -89,8 +100,10 @@ function getFooter(shop: ShopProfile) {
   </div>`;
 }
 
-export function buildSaleInvoiceHTML(invoice: SaleInvoiceWithItems, shop: ShopProfile): string {
+export async function buildSaleInvoiceHTML(invoice: SaleInvoiceWithItems, shop: ShopProfile): Promise<string> {
   const sym = currencySymbol(shop.currency);
+  const logoBase64 = await getBase64Image(shop.logo_uri);
+  
   const itemRows = invoice.items.map((item, i) => `
     <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f9f9f9'}">
       <td style="padding:6px 8px;border:1px solid #e0e0e0;">${i + 1}</td>
@@ -103,11 +116,13 @@ export function buildSaleInvoiceHTML(invoice: SaleInvoiceWithItems, shop: ShopPr
     </tr>
   `).join('');
 
+  const balanceDue = invoice.total - (invoice.amount_paid ?? invoice.total);
+
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Estimate ${invoice.invoice_number}</title></head>
 <body style="font-family:Arial,sans-serif;font-size:13px;padding:32px;color:#1a1a1a;margin:0;">
-  ${getHeader(shop, invoice.invoice_number, invoice.invoice_date, 'SALE', invoice.status)}
+  ${getHeader(shop, logoBase64, invoice.invoice_number, invoice.invoice_date, 'SALE', invoice.payment_status)}
   <div style="margin-bottom:16px;padding:10px;background:#f0f4ff;border-radius:6px;">
     <strong>Customer:</strong> ${invoice.customer_name || '—'} ${invoice.customer_phone ? `| ${invoice.customer_phone}` : ''}
   </div>
@@ -140,6 +155,12 @@ export function buildSaleInvoiceHTML(invoice: SaleInvoiceWithItems, shop: ShopPr
         <span style="font-weight:700;font-size:15px;">TOTAL</span>
         <span style="font-weight:700;font-size:15px;">${fmt(invoice.total, shop.currency)}</span>
       </div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;margin-top:4px;border-bottom:1px solid #e5e7eb;">
+        <span style="color:#555;">Amount Paid</span><span style="color:#059669;">${fmt(invoice.amount_paid ?? invoice.total, shop.currency)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;">
+        <span style="color:#555;font-weight:700;">Balance Due</span><span style="font-weight:700;color:${balanceDue > 0 ? '#dc2626' : '#111827'};">${fmt(balanceDue, shop.currency)}</span>
+      </div>
     </div>
   </div>
   ${invoice.notes ? `<div style="margin-bottom:16px;padding:10px;background:#f9fafb;border-radius:6px;border-left:3px solid #1A56DB;"><strong>Notes:</strong> ${invoice.notes}</div>` : ''}
@@ -150,8 +171,10 @@ export function buildSaleInvoiceHTML(invoice: SaleInvoiceWithItems, shop: ShopPr
 </html>`;
 }
 
-export function buildPurchaseInvoiceHTML(invoice: PurchaseInvoiceWithItems, shop: ShopProfile): string {
+export async function buildPurchaseInvoiceHTML(invoice: PurchaseInvoiceWithItems, shop: ShopProfile): Promise<string> {
   const sym = currencySymbol(shop.currency);
+  const logoBase64 = await getBase64Image(shop.logo_uri);
+
   const itemRows = invoice.items.map((item, i) => `
     <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f9f9f9'}">
       <td style="padding:6px 8px;border:1px solid #e0e0e0;">${i + 1}</td>
@@ -163,11 +186,13 @@ export function buildPurchaseInvoiceHTML(invoice: PurchaseInvoiceWithItems, shop
     </tr>
   `).join('');
 
+  const balanceDue = invoice.total - (invoice.amount_paid ?? invoice.total);
+
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Purchase ${invoice.invoice_number}</title></head>
 <body style="font-family:Arial,sans-serif;font-size:13px;padding:32px;color:#1a1a1a;margin:0;">
-  ${getHeader(shop, invoice.invoice_number, invoice.invoice_date, 'PURCHASE')}
+  ${getHeader(shop, logoBase64, invoice.invoice_number, invoice.invoice_date, 'PURCHASE', invoice.payment_status)}
   <div style="margin-bottom:16px;padding:10px;background:#f0fff8;border-radius:6px;">
     <strong>Vendor:</strong> ${invoice.vendor_name || '—'} ${invoice.vendor_phone ? `| ${invoice.vendor_phone}` : ''}
   </div>
@@ -195,6 +220,12 @@ export function buildPurchaseInvoiceHTML(invoice: PurchaseInvoiceWithItems, shop
       <div style="display:flex;justify-content:space-between;background:#0E9F6E;color:#fff;padding:8px 12px;border-radius:6px;margin-top:4px;">
         <span style="font-weight:700;font-size:15px;">TOTAL</span>
         <span style="font-weight:700;font-size:15px;">${fmt(invoice.total, shop.currency)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;margin-top:4px;border-bottom:1px solid #e5e7eb;">
+        <span style="color:#555;">Amount Paid</span><span style="color:#059669;">${fmt(invoice.amount_paid ?? invoice.total, shop.currency)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;">
+        <span style="color:#555;font-weight:700;">Balance Due</span><span style="font-weight:700;color:${balanceDue > 0 ? '#dc2626' : '#111827'};">${fmt(balanceDue, shop.currency)}</span>
       </div>
     </div>
   </div>

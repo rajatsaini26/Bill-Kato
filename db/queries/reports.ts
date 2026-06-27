@@ -23,10 +23,18 @@ export interface InvoicePnL {
 }
 
 export function getMonthlyPnL(): MonthlyPnL[] {
-  const salesRows = db.getAllSync<{ month: string; total: number }>(
-    `SELECT strftime('%Y-%m', invoice_date) AS month, SUM(total) AS total
-     FROM sale_invoices GROUP BY month ORDER BY month DESC`
+  // Sales revenue and COGS
+  const salesRows = db.getAllSync<{ month: string; total: number; cogs: number }>(
+    `SELECT 
+      strftime('%Y-%m', s.invoice_date) AS month, 
+      SUM(s.total) AS total,
+      SUM(i.cost_price * i.quantity) AS cogs
+     FROM sale_invoices s
+     LEFT JOIN sale_invoice_items i ON s.id = i.invoice_id
+     GROUP BY month ORDER BY month DESC`
   );
+  
+  // Purchases (Assets)
   const purchaseRows = db.getAllSync<{ month: string; total: number }>(
     `SELECT strftime('%Y-%m', invoice_date) AS month, SUM(total) AS total
      FROM purchase_invoices GROUP BY month ORDER BY month DESC`
@@ -34,31 +42,38 @@ export function getMonthlyPnL(): MonthlyPnL[] {
 
   const map: Record<string, MonthlyPnL> = {};
   for (const row of salesRows) {
-    map[row.month] = { month: row.month, revenue: row.total, purchases: 0, net_profit: row.total };
+    map[row.month] = { 
+      month: row.month, 
+      revenue: row.total, 
+      purchases: 0, 
+      net_profit: row.total - (row.cogs || 0) 
+    };
   }
   for (const row of purchaseRows) {
     if (map[row.month]) {
       map[row.month].purchases = row.total;
-      map[row.month].net_profit = map[row.month].revenue - row.total;
     } else {
-      map[row.month] = { month: row.month, revenue: 0, purchases: row.total, net_profit: -row.total };
+      map[row.month] = { month: row.month, revenue: 0, purchases: row.total, net_profit: 0 };
     }
   }
   return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
 }
 
 export function getQuarterlyPnL(): QuarterlyPnL[] {
-  const salesRows = db.getAllSync<{ year: string; quarter: string; total: number }>(
+  const salesRows = db.getAllSync<{ year: string; quarter: string; total: number; cogs: number }>(
     `SELECT
-      strftime('%Y', invoice_date) AS year,
+      strftime('%Y', s.invoice_date) AS year,
       CASE
-        WHEN CAST(strftime('%m', invoice_date) AS INT) BETWEEN 1 AND 3 THEN 'Q1'
-        WHEN CAST(strftime('%m', invoice_date) AS INT) BETWEEN 4 AND 6 THEN 'Q2'
-        WHEN CAST(strftime('%m', invoice_date) AS INT) BETWEEN 7 AND 9 THEN 'Q3'
+        WHEN CAST(strftime('%m', s.invoice_date) AS INT) BETWEEN 1 AND 3 THEN 'Q1'
+        WHEN CAST(strftime('%m', s.invoice_date) AS INT) BETWEEN 4 AND 6 THEN 'Q2'
+        WHEN CAST(strftime('%m', s.invoice_date) AS INT) BETWEEN 7 AND 9 THEN 'Q3'
         ELSE 'Q4'
       END AS quarter,
-      SUM(total) AS total
-     FROM sale_invoices GROUP BY year, quarter ORDER BY year DESC, quarter DESC`
+      SUM(s.total) AS total,
+      SUM(i.cost_price * i.quantity) AS cogs
+     FROM sale_invoices s
+     LEFT JOIN sale_invoice_items i ON s.id = i.invoice_id
+     GROUP BY year, quarter ORDER BY year DESC, quarter DESC`
   );
   const purchaseRows = db.getAllSync<{ year: string; quarter: string; total: number }>(
     `SELECT
@@ -76,15 +91,20 @@ export function getQuarterlyPnL(): QuarterlyPnL[] {
   const map: Record<string, QuarterlyPnL> = {};
   for (const row of salesRows) {
     const key = `${row.year}-${row.quarter}`;
-    map[key] = { year: row.year, quarter: row.quarter, revenue: row.total, purchases: 0, net_profit: row.total };
+    map[key] = { 
+      year: row.year, 
+      quarter: row.quarter, 
+      revenue: row.total, 
+      purchases: 0, 
+      net_profit: row.total - (row.cogs || 0) 
+    };
   }
   for (const row of purchaseRows) {
     const key = `${row.year}-${row.quarter}`;
     if (map[key]) {
       map[key].purchases = row.total;
-      map[key].net_profit = map[key].revenue - row.total;
     } else {
-      map[key] = { year: row.year, quarter: row.quarter, revenue: 0, purchases: row.total, net_profit: -row.total };
+      map[key] = { year: row.year, quarter: row.quarter, revenue: 0, purchases: row.total, net_profit: 0 };
     }
   }
   return Object.values(map).sort((a, b) => {
@@ -129,10 +149,15 @@ export function getDashboardStats(): {
     [today]
   )?.val ?? 0;
 
-  const monthSales = db.getFirstSync<{ val: number }>(
-    `SELECT COALESCE(SUM(total), 0) AS val FROM sale_invoices WHERE strftime('%Y-%m', invoice_date) = ?`,
+  const monthSales = db.getFirstSync<{ val: number; cogs: number }>(
+    `SELECT 
+      COALESCE(SUM(s.total), 0) AS val,
+      COALESCE(SUM(i.cost_price * i.quantity), 0) AS cogs
+     FROM sale_invoices s
+     LEFT JOIN sale_invoice_items i ON s.id = i.invoice_id
+     WHERE strftime('%Y-%m', s.invoice_date) = ?`,
     [month]
-  )?.val ?? 0;
+  );
 
   const monthPurchases = db.getFirstSync<{ val: number }>(
     `SELECT COALESCE(SUM(total), 0) AS val FROM purchase_invoices WHERE strftime('%Y-%m', invoice_date) = ?`,
@@ -142,8 +167,8 @@ export function getDashboardStats(): {
   return {
     todaySales,
     todayPurchases,
-    monthSales,
+    monthSales: monthSales?.val ?? 0,
     monthPurchases,
-    monthProfit: monthSales - monthPurchases,
+    monthProfit: (monthSales?.val ?? 0) - (monthSales?.cogs ?? 0),
   };
 }

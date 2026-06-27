@@ -32,6 +32,8 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
       notes           TEXT DEFAULT '',
       pdf_uri         TEXT DEFAULT '',
       status          TEXT DEFAULT 'paid',
+      amount_paid     REAL NOT NULL DEFAULT 0,
+      payment_status  TEXT DEFAULT 'Paid',
       created_at      TEXT DEFAULT (datetime('now', 'localtime'))
     );
 
@@ -58,6 +60,8 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
       total           REAL NOT NULL DEFAULT 0,
       notes           TEXT DEFAULT '',
       pdf_uri         TEXT DEFAULT '',
+      amount_paid     REAL NOT NULL DEFAULT 0,
+      payment_status  TEXT DEFAULT 'Paid',
       created_at      TEXT DEFAULT (datetime('now', 'localtime'))
     );
 
@@ -87,18 +91,21 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
     );
   `);
 
-  // Migrate existing databases to add missing columns (ignore errors if columns exist)
   const columnsToAdd = [
-    'bank_name TEXT DEFAULT ""',
-    'account_number TEXT DEFAULT ""',
-    'ifsc TEXT DEFAULT ""',
-    'upi_id TEXT DEFAULT ""',
-    'logo_uri TEXT DEFAULT ""'
+    { table: 'shop_profile', col: 'bank_name TEXT DEFAULT ""' },
+    { table: 'shop_profile', col: 'account_number TEXT DEFAULT ""' },
+    { table: 'shop_profile', col: 'ifsc TEXT DEFAULT ""' },
+    { table: 'shop_profile', col: 'upi_id TEXT DEFAULT ""' },
+    { table: 'shop_profile', col: 'logo_uri TEXT DEFAULT ""' },
+    { table: 'sale_invoices', col: 'amount_paid REAL NOT NULL DEFAULT 0' },
+    { table: 'sale_invoices', col: 'payment_status TEXT DEFAULT "Paid"' },
+    { table: 'purchase_invoices', col: 'amount_paid REAL NOT NULL DEFAULT 0' },
+    { table: 'purchase_invoices', col: 'payment_status TEXT DEFAULT "Paid"' }
   ];
 
-  for (const col of columnsToAdd) {
+  for (const { table, col } of columnsToAdd) {
     try {
-      db.execSync(`ALTER TABLE shop_profile ADD COLUMN ${col};`);
+      db.execSync(`ALTER TABLE ${table} ADD COLUMN ${col};`);
     } catch (e) {
       // Ignore if column already exists
     }

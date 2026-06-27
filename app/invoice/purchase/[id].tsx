@@ -37,13 +37,17 @@ export default function PurchaseInvoiceDetailScreen() {
     setSharing(true);
     try {
       const shop = getShop();
-      const html = buildPurchaseInvoiceHTML(invoice, shop);
+      const html = await buildPurchaseInvoiceHTML(invoice, shop);
       await generateAndSharePurchasePDF(html, invoice.id);
     } catch (e: any) {
       Alert.alert('PDF Error', e.message);
     } finally {
       setSharing(false);
     }
+  };
+
+  const handleEdit = () => {
+    router.push(`/invoice/purchase/create?editId=${invoice.id}`);
   };
 
   const handleDelete = () => {
@@ -62,11 +66,23 @@ export default function PurchaseInvoiceDetailScreen() {
     ]);
   };
 
+  const paymentStatus = invoice.payment_status || 'Paid';
+  const statusColor = paymentStatus === 'Paid' ? Colors.success : paymentStatus === 'Partial' ? Colors.warning : Colors.danger;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={styles.headerCard}>
-        <Text style={styles.invoiceNo}>{invoice.invoice_number}</Text>
-        <Text style={styles.date}>{toDisplayDate(invoice.invoice_date)}</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View>
+            <Text style={styles.invoiceNo}>{invoice.invoice_number}</Text>
+            <Text style={styles.date}>{toDisplayDate(invoice.invoice_date)}</Text>
+          </View>
+          <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>
+              {paymentStatus.toUpperCase()}
+            </Text>
+          </View>
+        </View>
         <View style={styles.divider} />
         <Text style={styles.fieldLabel}>Vendor</Text>
         <Text style={styles.fieldValue}>{invoice.vendor_name || '—'}</Text>
@@ -91,6 +107,12 @@ export default function PurchaseInvoiceDetailScreen() {
           <Text style={styles.grandLabel}>Total</Text>
           <Text style={[styles.grandValue, { color: Colors.success }]}>₹{invoice.total.toFixed(2)}</Text>
         </View>
+        {paymentStatus !== 'Paid' && (
+          <>
+            <View style={[styles.totalLine, { marginTop: 4 }]}><Text style={styles.totalLabel}>Amount Paid</Text><Text style={[styles.totalValue, { color: Colors.success }]}>₹{(invoice.amount_paid ?? 0).toFixed(2)}</Text></View>
+            <View style={styles.totalLine}><Text style={styles.totalLabel}>Balance Due</Text><Text style={[styles.totalValue, { color: Colors.danger }]}>₹{(invoice.total - (invoice.amount_paid ?? 0)).toFixed(2)}</Text></View>
+          </>
+        )}
       </View>
 
       {invoice.notes ? (
@@ -102,7 +124,10 @@ export default function PurchaseInvoiceDetailScreen() {
 
       <View style={styles.btnRow}>
         <TouchableOpacity style={styles.btnShare} onPress={handleShare} disabled={sharing}>
-          {sharing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>📤 Share PDF</Text>}
+          {sharing ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>📤 PDF</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.btnShare, { backgroundColor: Colors.warning }]} onPress={handleEdit}>
+          <Text style={styles.btnText}>✏️ Edit</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.btnDelete} onPress={handleDelete}>
           <Text style={styles.btnText}>🗑 Delete</Text>

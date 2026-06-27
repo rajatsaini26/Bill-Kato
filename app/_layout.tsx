@@ -26,6 +26,32 @@ export default function RootLayout() {
     }
   }, [isLoggedIn, segments]);
 
+  // Auto-backup in the background once a day
+  useEffect(() => {
+    if (isLoggedIn) {
+      const today = new Date().toISOString().slice(0, 10);
+      try {
+        const lastBackup = db.getFirstSync<{ created_at: string }>(
+          `SELECT created_at FROM backup_log WHERE status = 'success' ORDER BY created_at DESC LIMIT 1`
+        );
+        if (!lastBackup || !lastBackup.created_at.startsWith(today)) {
+          GoogleSignin.signInSilently()
+            .then(() => GoogleSignin.getTokens())
+            .then(({ accessToken }) => {
+              if (accessToken) {
+                const { backupToDrive } = require('../services/driveBackup');
+                return backupToDrive(accessToken);
+              }
+            })
+            .then(() => console.log('Auto-backup successful'))
+            .catch(e => console.log('Auto-backup skipped/failed:', e));
+        }
+      } catch (e) {
+        console.log('Error checking backup', e);
+      }
+    }
+  }, [isLoggedIn]);
+
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />

@@ -14,17 +14,53 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
+      await GoogleSignin.signIn();
       const tokens = await GoogleSignin.getTokens();
       
       if (tokens.accessToken) {
         setDriveAccessToken(tokens.accessToken);
-        setIsLoggedIn(true);
-        router.replace('/(tabs)');
+        
+        // Ask to Restore Backup
+        Alert.alert(
+          'Restore Data?',
+          'Do you want to restore your previous data from Google Drive? This will overwrite current local data.',
+          [
+            {
+              text: 'Skip',
+              style: 'cancel',
+              onPress: () => {
+                setIsLoggedIn(true);
+                router.replace('/(tabs)');
+              }
+            },
+            {
+              text: 'Restore',
+              onPress: async () => {
+                setLoading(true);
+                try {
+                  const { restoreFromDrive } = require('../services/driveBackup');
+                  const found = await restoreFromDrive(tokens.accessToken);
+                  if (found) {
+                    Alert.alert('Success', 'Data restored successfully!');
+                  } else {
+                    Alert.alert('No Backup Found', 'Starting fresh.');
+                  }
+                } catch (e: any) {
+                  Alert.alert('Restore Failed', e.message);
+                } finally {
+                  setLoading(false);
+                  setIsLoggedIn(true);
+                  router.replace('/(tabs)');
+                }
+              }
+            }
+          ]
+        );
       } else {
         throw new Error('No access token returned from Google');
       }
     } catch (error: any) {
+      setLoading(false);
       if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         // user cancelled the login flow
       } else if (error.code === statusCodes.IN_PROGRESS) {
@@ -34,8 +70,6 @@ export default function LoginScreen() {
       } else {
         Alert.alert('Login Error', error.message);
       }
-    } finally {
-      setLoading(false);
     }
   };
 
