@@ -1,17 +1,31 @@
 {
   "expo": {
-    "name": "bill-kato",
-    "slug": "bill-kato",
+    "name": "Bill Kato",
+    "slug": "billkato",
+    "owner": "rajattak27",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "extra": {
+      "eas": {
+        "projectId": "58bfa34b-2513-448c-9893-dc38db225861"
+      }
+    },
+    "splash": {
+      "backgroundColor": "#1A56DB"
+    },
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "com.billkato.app",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.billkato.app",
+      "permissions": [
+        "INTERNET"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#1A56DB",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -20,6 +34,13 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "scheme": "billkato",
+    "plugins": [
+      "expo-sqlite",
+      "expo-sharing",
+      "expo-web-browser",
+      "expo-router"
+    ]
   }
 }
