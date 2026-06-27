@@ -1,11 +1,14 @@
 import React, { useCallback, useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, ActivityIndicator
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize } from '../../constants/theme';
-import { getPurchaseInvoices, PurchaseInvoice } from '../../db/queries/purchases';
+import { getPurchaseInvoices, PurchaseInvoice, getPurchaseInvoiceById, deleteMultiplePurchaseInvoices } from '../../db/queries/purchases';
 import { toShortDate, toMonthKey, toStorableDate } from '../../utils/dateFormat';
+import { buildPurchaseInvoiceHTML } from '../../services/pdfTemplate';
+import { generateAndShareBulkPDF } from '../../services/shareInvoice';
+import { db } from '../../db/client';
 
 function MonthPicker({ selected, onChange }: { selected: string | null; onChange: (v: string | null) => void }) {
   const options = [null, ...Array.from({ length: 12 }, (_, i) => {
@@ -39,42 +42,123 @@ export default function PurchasesScreen() {
   const router = useRouter();
   const currentMonth = toMonthKey(toStorableDate());
   const [selectedMonth, setSelectedMonth] = useState<string | null>(currentMonth);
+  const [searchQuery, setSearchQuery] = useState('');
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      try {
-        setInvoices(getPurchaseInvoices(selectedMonth ? { month: selectedMonth } : undefined));
-      } catch (e: any) {
-        Alert.alert('Error', e.message);
+  const loadInvoices = useCallback(() => {
+    try {
+      setInvoices(getPurchaseInvoices({
+        month: selectedMonth ?? undefined,
+        searchQuery: searchQuery || undefined,
+      }));
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  }, [selectedMonth, searchQuery]);
+
+  useFocusEffect(useCallback(() => { loadInvoices(); }, [loadInvoices]));
+
+  const toggleSelection = (id: number) => {
+    const newSel = new Set(selectedIds);
+    if (newSel.has(id)) newSel.delete(id);
+    else newSel.add(id);
+    setSelectedIds(newSel);
+  };
+
+  const handleBulkDelete = () => {
+    Alert.alert('Delete Purchases', `Are you sure you want to delete ${selectedIds.size} purchases?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => {
+          try {
+            deleteMultiplePurchaseInvoices(Array.from(selectedIds));
+            setSelectedIds(new Set());
+            loadInvoices();
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
+        }
       }
-    }, [selectedMonth])
-  );
+    ]);
+  };
 
-  const renderItem = ({ item }: { item: PurchaseInvoice }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push(`/invoice/purchase/${item.id}`)}
-    >
-      <View style={styles.cardLeft}>
-        <Text style={styles.invNo}>{item.invoice_number}</Text>
-        <Text style={styles.partyName}>{item.vendor_name || '—'}</Text>
-        <Text style={styles.date}>{toShortDate(item.invoice_date)}</Text>
-      </View>
-      <Text style={styles.amount}>₹{item.total.toFixed(2)}</Text>
-    </TouchableOpacity>
-  );
+  const handleBulkShare = async () => {
+    setIsProcessing(true);
+    try {
+      const shop = db.getFirstSync<any>(`SELECT * FROM shop_profile WHERE id = 1`) ?? {
+        id: 1, name: 'My Shop', address: '', phone: '', gstin: '', currency: 'INR',
+      };
+      const htmls: string[] = [];
+      for (const id of Array.from(selectedIds)) {
+        const inv = getPurchaseInvoiceById(id);
+        if (inv) {
+          htmls.push(await buildPurchaseInvoiceHTML(inv as any, shop));
+        }
+      }
+      await generateAndShareBulkPDF(htmls, 'Purchase_Records');
+      setSelectedIds(new Set());
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const renderItem = ({ item }: { item: PurchaseInvoice }) => {
+    const isSelected = selectedIds.has(item.id);
+    const selectionMode = selectedIds.size > 0;
+    
+    return (
+      <TouchableOpacity
+        style={[styles.card, isSelected && styles.cardSelected]}
+        onPress={() => {
+          if (selectionMode) toggleSelection(item.id);
+          else router.push(`/invoice/purchase/${item.id}`);
+        }}
+        onLongPress={() => toggleSelection(item.id)}
+      >
+        <View style={styles.cardLeft}>
+          <Text style={styles.invNo}>{item.invoice_number}</Text>
+          <Text style={styles.partyName}>{item.vendor_name || '—'}</Text>
+          <Text style={styles.date}>{toShortDate(item.invoice_date)}</Text>
+        </View>
+        <Text style={styles.amount}>₹{item.total.toFixed(2)}</Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <MonthPicker selected={selectedMonth} onChange={(v) => {
-        setSelectedMonth(v);
-        try {
-          setInvoices(getPurchaseInvoices(v ? { month: v } : undefined));
-        } catch (e: any) {
-          Alert.alert('Error', e.message);
-        }
-      }} />
+      {selectedIds.size > 0 ? (
+        <View style={styles.bulkActionBar}>
+          <Text style={styles.bulkActionText}>{selectedIds.size} Selected</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity onPress={handleBulkDelete} style={styles.bulkBtnDanger}>
+              <Text style={styles.bulkBtnText}>Delete</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleBulkShare} style={styles.bulkBtnPrimary}>
+              {isProcessing ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.bulkBtnText}>Share</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setSelectedIds(new Set())} style={styles.bulkBtnOutline}>
+              <Text style={{ color: Colors.textPrimary, fontSize: FontSize.xs, fontWeight: '700' }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.searchBar}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by vendor or invoice no..."
+            placeholderTextColor="#888"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+      )}
+
+      <MonthPicker selected={selectedMonth} onChange={setSelectedMonth} />
+      
       <FlatList
         data={invoices}
         keyExtractor={(item) => String(item.id)}
@@ -94,6 +178,14 @@ export default function PurchasesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background, padding: Spacing.md },
+  searchBar: { marginBottom: Spacing.sm },
+  searchInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 10, backgroundColor: '#fff', fontSize: FontSize.sm },
+  bulkActionBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#ecfdf5', padding: 12, borderRadius: 8, marginBottom: Spacing.sm },
+  bulkActionText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.success },
+  bulkBtnDanger: { backgroundColor: Colors.danger, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  bulkBtnPrimary: { backgroundColor: Colors.success, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  bulkBtnOutline: { borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#fff' },
+  bulkBtnText: { color: '#fff', fontSize: FontSize.xs, fontWeight: '700' },
   filterChip: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginRight: 8,
     backgroundColor: Colors.border,
@@ -106,6 +198,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
     borderLeftWidth: 4, borderLeftColor: Colors.success,
   },
+  cardSelected: { backgroundColor: '#f0fdf4', borderColor: Colors.success, borderWidth: 1 },
   cardLeft: { flex: 1 },
   invNo: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.success },
   partyName: { fontSize: FontSize.md, color: Colors.textPrimary, marginTop: 2 },

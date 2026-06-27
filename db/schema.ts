@@ -34,6 +34,7 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
       status          TEXT DEFAULT 'paid',
       amount_paid     REAL NOT NULL DEFAULT 0,
       payment_status  TEXT DEFAULT 'Paid',
+      invoice_type    TEXT DEFAULT 'sale',
       created_at      TEXT DEFAULT (datetime('now', 'localtime'))
     );
 
@@ -99,6 +100,7 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
     { table: 'shop_profile', col: 'logo_uri TEXT DEFAULT ""' },
     { table: 'sale_invoices', col: 'amount_paid REAL NOT NULL DEFAULT 0' },
     { table: 'sale_invoices', col: 'payment_status TEXT DEFAULT "Paid"' },
+    { table: 'sale_invoices', col: 'invoice_type TEXT DEFAULT "sale"' },
     { table: 'purchase_invoices', col: 'amount_paid REAL NOT NULL DEFAULT 0' },
     { table: 'purchase_invoices', col: 'payment_status TEXT DEFAULT "Paid"' }
   ];

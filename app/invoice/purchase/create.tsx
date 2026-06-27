@@ -11,6 +11,7 @@ import { nextInvoiceNumber } from '../../../utils/invoiceNumber';
 import { buildPurchaseInvoiceHTML } from '../../../services/pdfTemplate';
 import { generateAndSharePurchasePDF } from '../../../services/shareInvoice';
 import { db } from '../../../db/client';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface Item {
   item_name: string;
@@ -48,6 +49,7 @@ export default function CreatePurchaseInvoiceScreen() {
   const [showVendorSuggestions, setShowVendorSuggestions] = useState(false);
 
   const [invoiceDate, setInvoiceDate] = useState(toStorableDate());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [editInvoiceNumber, setEditInvoiceNumber] = useState('');
 
   useEffect(() => {
@@ -225,10 +227,23 @@ export default function CreatePurchaseInvoiceScreen() {
           )}
         </View>
         <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Vendor Phone (optional)" value={vendorPhone} onChangeText={setVendorPhone} keyboardType="phone-pad" />
-        <View style={styles.dateRow}>
+        
+        <TouchableOpacity style={styles.dateRow} onPress={() => setShowDatePicker(true)}>
           <Text style={styles.dateLabel}>Invoice Date:</Text>
-          <Text style={styles.dateValue}>{toDisplayDate(invoiceDate)}</Text>
-        </View>
+          <Text style={[styles.dateValue, { color: Colors.primary, textDecorationLine: 'underline' }]}>{toDisplayDate(invoiceDate)}</Text>
+        </TouchableOpacity>
+        
+        {showDatePicker && (
+          <DateTimePicker
+            value={new Date(invoiceDate)}
+            mode="date"
+            display="default"
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(false);
+              if (selectedDate) setInvoiceDate(toStorableDate(selectedDate));
+            }}
+          />
+        )}
       </View>
 
       {/* Items */}

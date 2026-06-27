@@ -27,6 +27,7 @@ export interface SaleInvoice {
   status: string;
   amount_paid: number;
   payment_status: string;
+  invoice_type: string;
   created_at: string;
 }
 
@@ -45,13 +46,14 @@ export interface CreateSaleInvoiceInput {
   status: string;
   amount_paid: number;
   payment_status: string;
+  invoice_type?: string;
   items: Omit<SaleInvoiceItem, 'id' | 'invoice_id'>[];
 }
 
 export function createSaleInvoice(data: CreateSaleInvoiceInput): number {
   const result = db.runSync(
-    `INSERT INTO sale_invoices (invoice_number, customer_name, customer_phone, invoice_date, subtotal, discount_amount, tax_amount, total, notes, status, amount_paid, payment_status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sale_invoices (invoice_number, customer_name, customer_phone, invoice_date, subtotal, discount_amount, tax_amount, total, notes, status, amount_paid, payment_status, invoice_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       data.invoice_number,
       data.customer_name,
@@ -65,6 +67,7 @@ export function createSaleInvoice(data: CreateSaleInvoiceInput): number {
       data.status,
       data.amount_paid,
       data.payment_status,
+      data.invoice_type || 'sale',
     ]
   );
   const invoiceId = result.lastInsertRowId;
@@ -74,11 +77,12 @@ export function createSaleInvoice(data: CreateSaleInvoiceInput): number {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [invoiceId, item.item_name, item.quantity, item.unit, item.unit_price, item.discount_pct, item.line_total, item.cost_price]
     );
+    const stockChange = (data.invoice_type === 'return') ? item.quantity : -item.quantity;
     db.runSync(
       `INSERT INTO inventory_items (item_name, unit, current_stock, default_price)
        VALUES (?, ?, ?, ?)
-       ON CONFLICT(item_name) DO UPDATE SET current_stock = current_stock - ?`,
-      [item.item_name, item.unit, -item.quantity, item.unit_price, item.quantity]
+       ON CONFLICT(item_name) DO UPDATE SET current_stock = current_stock + ?`,
+      [item.item_name, item.unit, stockChange, item.unit_price, stockChange]
     );
   }
   return invoiceId as number;
@@ -86,20 +90,23 @@ export function createSaleInvoice(data: CreateSaleInvoiceInput): number {
 
 export function updateSaleInvoice(id: number, data: CreateSaleInvoiceInput): void {
   // 1. Revert old stock
+  const oldInvoice = db.getFirstSync<{ invoice_type: string }>(`SELECT invoice_type FROM sale_invoices WHERE id = ?`, [id]);
+  const isOldReturn = oldInvoice?.invoice_type === 'return';
   const oldItems = db.getAllSync<SaleInvoiceItem>(`SELECT * FROM sale_invoice_items WHERE invoice_id = ?`, [id]);
   for (const old of oldItems) {
+    const revertChange = isOldReturn ? -old.quantity : old.quantity;
     db.runSync(
       `UPDATE inventory_items SET current_stock = current_stock + ? WHERE item_name = ?`,
-      [old.quantity, old.item_name]
+      [revertChange, old.item_name]
     );
   }
 
   // 2. Update Invoice
   db.runSync(
     `UPDATE sale_invoices 
-     SET invoice_number = ?, customer_name = ?, customer_phone = ?, invoice_date = ?, subtotal = ?, discount_amount = ?, tax_amount = ?, total = ?, notes = ?, status = ?, amount_paid = ?, payment_status = ?
+     SET invoice_number = ?, customer_name = ?, customer_phone = ?, invoice_date = ?, subtotal = ?, discount_amount = ?, tax_amount = ?, total = ?, notes = ?, status = ?, amount_paid = ?, payment_status = ?, invoice_type = ?
      WHERE id = ?`,
-    [data.invoice_number, data.customer_name, data.customer_phone, data.invoice_date, data.subtotal, data.discount_amount, data.tax_amount, data.total, data.notes, data.status, data.amount_paid, data.payment_status, id]
+    [data.invoice_number, data.customer_name, data.customer_phone, data.invoice_date, data.subtotal, data.discount_amount, data.tax_amount, data.total, data.notes, data.status, data.amount_paid, data.payment_status, data.invoice_type || 'sale', id]
   );
 
   // 3. Delete old items and insert new ones
@@ -110,22 +117,30 @@ export function updateSaleInvoice(id: number, data: CreateSaleInvoiceInput): voi
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, item.item_name, item.quantity, item.unit, item.unit_price, item.discount_pct, item.line_total, item.cost_price]
     );
+    const stockChange = (data.invoice_type === 'return') ? item.quantity : -item.quantity;
     db.runSync(
       `INSERT INTO inventory_items (item_name, unit, current_stock, default_price)
        VALUES (?, ?, ?, ?)
-       ON CONFLICT(item_name) DO UPDATE SET current_stock = current_stock - ?`,
-      [item.item_name, item.unit, -item.quantity, item.unit_price, item.quantity]
+       ON CONFLICT(item_name) DO UPDATE SET current_stock = current_stock + ?`,
+      [item.item_name, item.unit, stockChange, item.unit_price, stockChange]
     );
   }
 }
 
-export function getSaleInvoices(filters?: { month?: string; quarter?: string }): SaleInvoice[] {
-  let query = `SELECT * FROM sale_invoices`;
+export function getSaleInvoices(filters?: { month?: string; quarter?: string; searchQuery?: string }): SaleInvoice[] {
+  let query = `SELECT * FROM sale_invoices WHERE 1=1`;
   const params: string[] = [];
+  
   if (filters?.month) {
-    query += ` WHERE strftime('%Y-%m', invoice_date) = ?`;
+    query += ` AND strftime('%Y-%m', invoice_date) = ?`;
     params.push(filters.month);
   }
+  
+  if (filters?.searchQuery) {
+    query += ` AND (customer_name LIKE ? OR invoice_number LIKE ?)`;
+    params.push(`%${filters.searchQuery}%`, `%${filters.searchQuery}%`);
+  }
+  
   query += ` ORDER BY created_at DESC`;
   return db.getAllSync<SaleInvoice>(query, params);
 }
@@ -164,10 +179,20 @@ export function updateSaleInvoicePdfUri(id: number, uri: string): void {
 }
 
 export function deleteSaleInvoice(id: number): void {
+  const oldInvoice = db.getFirstSync<{ invoice_type: string }>(`SELECT invoice_type FROM sale_invoices WHERE id = ?`, [id]);
+  const isOldReturn = oldInvoice?.invoice_type === 'return';
+  
   // Revert stock before deleting
   const items = db.getAllSync<SaleInvoiceItem>(`SELECT * FROM sale_invoice_items WHERE invoice_id = ?`, [id]);
   for (const item of items) {
-    db.runSync(`UPDATE inventory_items SET current_stock = current_stock + ? WHERE item_name = ?`, [item.quantity, item.item_name]);
+    const revertChange = isOldReturn ? -item.quantity : item.quantity;
+    db.runSync(`UPDATE inventory_items SET current_stock = current_stock + ? WHERE item_name = ?`, [revertChange, item.item_name]);
   }
   db.runSync(`DELETE FROM sale_invoices WHERE id = ?`, [id]);
+}
+
+export function deleteMultipleSaleInvoices(ids: number[]): void {
+  for (const id of ids) {
+    deleteSaleInvoice(id);
+  }
 }

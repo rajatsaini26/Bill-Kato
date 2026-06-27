@@ -228,9 +228,18 @@ export default function SettingsScreen() {
 
       <TouchableOpacity
         style={styles.logoutBtn}
-        onPress={() => setIsLoggedIn(false)}
+        onPress={async () => {
+          try {
+            await GoogleSignin.revokeAccess();
+            await GoogleSignin.signOut();
+          } catch (e) {
+            console.log(e);
+          }
+          setDriveAccessToken('');
+          setIsLoggedIn(false);
+        }}
       >
-        <Text style={styles.logoutBtnText}>Logout</Text>
+        <Text style={styles.logoutBtnText}>Logout & Revoke Access</Text>
       </TouchableOpacity>
     </ScrollView>
   );

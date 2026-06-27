@@ -36,9 +36,9 @@ async function getBase64Image(uri?: string): Promise<string> {
   }
 }
 
-function getHeader(shop: ShopProfile, logoBase64: string, invoiceNumber: string, date: string, type: 'SALE' | 'PURCHASE', status?: string) {
-  const title = type === 'SALE' ? 'ESTIMATE' : 'PURCHASE RECORD';
-  const color = type === 'SALE' ? '#1A56DB' : '#0E9F6E';
+function getHeader(shop: ShopProfile, logoBase64: string, invoiceNumber: string, date: string, type: 'SALE' | 'PURCHASE' | 'RETURN', status?: string) {
+  const title = type === 'SALE' ? 'ESTIMATE' : type === 'RETURN' ? 'RETURN BILL' : 'PURCHASE RECORD';
+  const color = type === 'SALE' ? '#1A56DB' : type === 'RETURN' ? '#dc2626' : '#0E9F6E';
   return `
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
     <div style="display:flex;gap:16px;align-items:center;">
@@ -122,7 +122,7 @@ export async function buildSaleInvoiceHTML(invoice: SaleInvoiceWithItems, shop: 
 <html>
 <head><meta charset="utf-8"><title>Estimate ${invoice.invoice_number}</title></head>
 <body style="font-family:Arial,sans-serif;font-size:13px;padding:32px;color:#1a1a1a;margin:0;">
-  ${getHeader(shop, logoBase64, invoice.invoice_number, invoice.invoice_date, 'SALE', invoice.payment_status)}
+  ${getHeader(shop, logoBase64, invoice.invoice_number, invoice.invoice_date, invoice.invoice_type === 'return' ? 'RETURN' : 'SALE', invoice.payment_status)}
   <div style="margin-bottom:16px;padding:10px;background:#f0f4ff;border-radius:6px;">
     <strong>Customer:</strong> ${invoice.customer_name || '—'} ${invoice.customer_phone ? `| ${invoice.customer_phone}` : ''}
   </div>

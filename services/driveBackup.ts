@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { db } from '../db/client';
+import { db, reloadDatabase } from '../db/client';
 
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID!;
 
@@ -81,6 +81,11 @@ export async function restoreFromDrive(accessToken: string): Promise<boolean> {
 
   const fileId = listJson.files[0].id;
 
+  // Close the DB before overwriting the file
+  try {
+    db.closeSync();
+  } catch (e) { }
+
   // 2. Download the file
   const fileData = await FileSystem.downloadAsync(
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
@@ -91,8 +96,10 @@ export async function restoreFromDrive(accessToken: string): Promise<boolean> {
   );
 
   if (fileData.status !== 200) {
+    reloadDatabase(); // ensure it reopens even if download failed
     throw new Error('Failed to download backup file');
   }
 
+  reloadDatabase();
   return true;
 }

@@ -27,8 +27,8 @@ export function getMonthlyPnL(): MonthlyPnL[] {
   const salesRows = db.getAllSync<{ month: string; total: number; cogs: number }>(
     `SELECT 
       strftime('%Y-%m', s.invoice_date) AS month, 
-      SUM(s.total) AS total,
-      SUM(i.cost_price * i.quantity) AS cogs
+      SUM(CASE WHEN s.invoice_type = 'return' THEN -s.total ELSE s.total END) AS total,
+      SUM(CASE WHEN s.invoice_type = 'return' THEN -(i.cost_price * i.quantity) ELSE (i.cost_price * i.quantity) END) AS cogs
      FROM sale_invoices s
      LEFT JOIN sale_invoice_items i ON s.id = i.invoice_id
      GROUP BY month ORDER BY month DESC`
@@ -69,8 +69,8 @@ export function getQuarterlyPnL(): QuarterlyPnL[] {
         WHEN CAST(strftime('%m', s.invoice_date) AS INT) BETWEEN 7 AND 9 THEN 'Q3'
         ELSE 'Q4'
       END AS quarter,
-      SUM(s.total) AS total,
-      SUM(i.cost_price * i.quantity) AS cogs
+      SUM(CASE WHEN s.invoice_type = 'return' THEN -s.total ELSE s.total END) AS total,
+      SUM(CASE WHEN s.invoice_type = 'return' THEN -(i.cost_price * i.quantity) ELSE (i.cost_price * i.quantity) END) AS cogs
      FROM sale_invoices s
      LEFT JOIN sale_invoice_items i ON s.id = i.invoice_id
      GROUP BY year, quarter ORDER BY year DESC, quarter DESC`
@@ -140,7 +140,7 @@ export function getDashboardStats(): {
   const month = new Date().toISOString().slice(0, 7);
 
   const todaySales = db.getFirstSync<{ val: number }>(
-    `SELECT COALESCE(SUM(total), 0) AS val FROM sale_invoices WHERE date(invoice_date) = ?`,
+    `SELECT COALESCE(SUM(CASE WHEN invoice_type = 'return' THEN -total ELSE total END), 0) AS val FROM sale_invoices WHERE date(invoice_date) = ?`,
     [today]
   )?.val ?? 0;
 
@@ -151,8 +151,8 @@ export function getDashboardStats(): {
 
   const monthSales = db.getFirstSync<{ val: number; cogs: number }>(
     `SELECT 
-      COALESCE(SUM(s.total), 0) AS val,
-      COALESCE(SUM(i.cost_price * i.quantity), 0) AS cogs
+      COALESCE(SUM(CASE WHEN s.invoice_type = 'return' THEN -s.total ELSE s.total END), 0) AS val,
+      COALESCE(SUM(CASE WHEN s.invoice_type = 'return' THEN -(i.cost_price * i.quantity) ELSE (i.cost_price * i.quantity) END), 0) AS cogs
      FROM sale_invoices s
      LEFT JOIN sale_invoice_items i ON s.id = i.invoice_id
      WHERE strftime('%Y-%m', s.invoice_date) = ?`,

@@ -12,6 +12,7 @@ import { calcLineTotals } from '../../../utils/pnl';
 import { buildSaleInvoiceHTML } from '../../../services/pdfTemplate';
 import { generateAndShareSalePDF } from '../../../services/shareInvoice';
 import { db } from '../../../db/client';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface Item {
   item_name: string;
@@ -43,6 +44,7 @@ export default function CreateSaleInvoiceScreen() {
   const [taxPct, setTaxPct] = useState('0');
   const [paymentStatus, setPaymentStatus] = useState<'Paid' | 'Unpaid' | 'Partial'>('Paid');
   const [amountPaid, setAmountPaid] = useState('');
+  const [invoiceType, setInvoiceType] = useState<'sale' | 'return'>('sale');
   
   const [items, setItems] = useState<Item[]>([emptyItem()]);
   const [loading, setLoading] = useState(false);
@@ -53,6 +55,7 @@ export default function CreateSaleInvoiceScreen() {
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   
   const [invoiceDate, setInvoiceDate] = useState(toStorableDate());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [editInvoiceNumber, setEditInvoiceNumber] = useState('');
 
   useEffect(() => {
@@ -69,6 +72,7 @@ export default function CreateSaleInvoiceScreen() {
           setInvoiceDate(inv.invoice_date);
           setNotes(inv.notes);
           setPaymentStatus(inv.payment_status as any || 'Paid');
+          setInvoiceType(inv.invoice_type as 'sale' | 'return' || 'sale');
           setAmountPaid(inv.amount_paid > 0 ? inv.amount_paid.toString() : '');
           setTaxPct(inv.subtotal > 0 ? ((inv.tax_amount / inv.subtotal) * 100).toFixed(2).replace(/\.00$/, '') : '0');
           setItems(inv.items.map(i => ({
@@ -184,6 +188,7 @@ export default function CreateSaleInvoiceScreen() {
         status: paymentStatus.toLowerCase(),
         amount_paid: finalAmountPaid,
         payment_status: paymentStatus,
+        invoice_type: invoiceType,
         items: itemsData,
       };
 
@@ -226,12 +231,25 @@ export default function CreateSaleInvoiceScreen() {
     status: paymentStatus.toLowerCase(),
     amount_paid: finalAmountPaid,
     payment_status: paymentStatus,
+    invoice_type: invoiceType,
     pdf_uri: '',
     created_at: invoiceDate,
   });
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
+      {/* Type Toggle */}
+      <View style={[styles.section, { padding: Spacing.sm }]}>
+        <View style={styles.statusRow}>
+          <TouchableOpacity onPress={() => setInvoiceType('sale')} style={[styles.statusBtn, invoiceType === 'sale' && { backgroundColor: Colors.primary, borderColor: 'transparent' }]}>
+            <Text style={[styles.statusBtnText, invoiceType === 'sale' && { color: '#fff' }]}>Standard Sale</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setInvoiceType('return')} style={[styles.statusBtn, invoiceType === 'return' && { backgroundColor: Colors.danger, borderColor: 'transparent' }]}>
+            <Text style={[styles.statusBtnText, invoiceType === 'return' && { color: '#fff' }]}>Return Bill</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Customer Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Customer Details</Text>
@@ -254,10 +272,23 @@ export default function CreateSaleInvoiceScreen() {
           )}
         </View>
         <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Customer Phone (optional)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" />
-        <View style={styles.dateRow}>
+        
+        <TouchableOpacity style={styles.dateRow} onPress={() => setShowDatePicker(true)}>
           <Text style={styles.dateLabel}>Invoice Date:</Text>
-          <Text style={styles.dateValue}>{toDisplayDate(invoiceDate)}</Text>
-        </View>
+          <Text style={[styles.dateValue, { color: Colors.primary, textDecorationLine: 'underline' }]}>{toDisplayDate(invoiceDate)}</Text>
+        </TouchableOpacity>
+        
+        {showDatePicker && (
+          <DateTimePicker
+            value={new Date(invoiceDate)}
+            mode="date"
+            display="default"
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(false);
+              if (selectedDate) setInvoiceDate(toStorableDate(selectedDate));
+            }}
+          />
+        )}
       </View>
 
       {/* Items */}

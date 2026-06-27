@@ -111,13 +111,20 @@ export function updatePurchaseInvoice(id: number, data: CreatePurchaseInvoiceInp
   }
 }
 
-export function getPurchaseInvoices(filters?: { month?: string; quarter?: string }): PurchaseInvoice[] {
-  let query = `SELECT * FROM purchase_invoices`;
+export function getPurchaseInvoices(filters?: { month?: string; quarter?: string; searchQuery?: string }): PurchaseInvoice[] {
+  let query = `SELECT * FROM purchase_invoices WHERE 1=1`;
   const params: string[] = [];
+  
   if (filters?.month) {
-    query += ` WHERE strftime('%Y-%m', invoice_date) = ?`;
+    query += ` AND strftime('%Y-%m', invoice_date) = ?`;
     params.push(filters.month);
   }
+
+  if (filters?.searchQuery) {
+    query += ` AND (vendor_name LIKE ? OR invoice_number LIKE ?)`;
+    params.push(`%${filters.searchQuery}%`, `%${filters.searchQuery}%`);
+  }
+
   query += ` ORDER BY created_at DESC`;
   return db.getAllSync<PurchaseInvoice>(query, params);
 }
@@ -162,4 +169,10 @@ export function deletePurchaseInvoice(id: number): void {
     db.runSync(`UPDATE inventory_items SET current_stock = current_stock - ? WHERE item_name = ?`, [item.quantity, item.item_name]);
   }
   db.runSync(`DELETE FROM purchase_invoices WHERE id = ?`, [id]);
+}
+
+export function deleteMultiplePurchaseInvoices(ids: number[]): void {
+  for (const id of ids) {
+    deletePurchaseInvoice(id);
+  }
 }
