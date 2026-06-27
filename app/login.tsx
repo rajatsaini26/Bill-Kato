@@ -1,24 +1,43 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useGoogleAuth } from '../services/driveBackup';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { useAppStore } from '../store/useAppStore';
 import { Colors, Spacing, FontSize } from '../constants/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { request, response, promptAsync } = useGoogleAuth();
-  const { setIsLoggedIn } = useAppStore();
+  const { setIsLoggedIn, setDriveAccessToken } = useAppStore();
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const token = (response as any).params?.access_token ?? null;
-      if (token) {
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const tokens = await GoogleSignin.getTokens();
+      
+      if (tokens.accessToken) {
+        setDriveAccessToken(tokens.accessToken);
         setIsLoggedIn(true);
         router.replace('/(tabs)');
+      } else {
+        throw new Error('No access token returned from Google');
       }
+    } catch (error: any) {
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        // user cancelled the login flow
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        // operation (e.g. sign in) is in progress already
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Error', 'Google Play Services not available or outdated');
+      } else {
+        Alert.alert('Login Error', error.message);
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [response]);
+  };
 
   return (
     <View style={styles.container}>
@@ -27,10 +46,14 @@ export default function LoginScreen() {
 
       <TouchableOpacity
         style={styles.googleBtn}
-        onPress={() => promptAsync()}
-        disabled={!request}
+        onPress={handleGoogleLogin}
+        disabled={loading}
       >
-        <Text style={styles.googleBtnText}>Sign in with Google</Text>
+        {loading ? (
+          <ActivityIndicator color="#374151" />
+        ) : (
+          <Text style={styles.googleBtnText}>Sign in with Google</Text>
+        )}
       </TouchableOpacity>
     </View>
   );

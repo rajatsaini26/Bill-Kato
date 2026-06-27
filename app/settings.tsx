@@ -6,7 +6,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Spacing, FontSize } from '../constants/theme';
 import { useAppStore } from '../store/useAppStore';
-import { useGoogleAuth, backupToDrive } from '../services/driveBackup';
+import { backupToDrive } from '../services/driveBackup';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { db } from '../db/client';
 
 interface ShopProfile {
@@ -39,22 +40,27 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
 
-  const { request, response, promptAsync } = useGoogleAuth();
-
   useEffect(() => {
     loadProfile();
     loadBackupLogs();
   }, []);
 
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const token = (response as any).params?.access_token ?? null;
-      if (token) {
-        setDriveAccessToken(token);
+  const connectGoogleDrive = async () => {
+    try {
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const tokens = await GoogleSignin.getTokens();
+      
+      if (tokens.accessToken) {
+        setDriveAccessToken(tokens.accessToken);
         Alert.alert('Success', 'Google Drive connected!');
       }
+    } catch (error: any) {
+      if (error.code !== statusCodes.SIGN_IN_CANCELLED) {
+        Alert.alert('Connection Failed', error.message);
+      }
     }
-  }, [response]);
+  };
 
   const loadProfile = () => {
     try {
@@ -188,8 +194,7 @@ export default function SettingsScreen() {
         )}
         <TouchableOpacity
           style={[styles.driveBtn, driveAccessToken && styles.driveBtnConnected]}
-          onPress={() => promptAsync()}
-          disabled={!request}
+          onPress={connectGoogleDrive}
         >
           <Text style={styles.driveBtnText}>
             {driveAccessToken ? '✓ Google Drive Connected' : '🔗 Connect Google Drive'}

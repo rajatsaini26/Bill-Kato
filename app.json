@@ -40,7 +40,8 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-web-browser",
-      "expo-router"
+      "expo-router",
+      "@react-native-google-signin/google-signin"
     ]
   }
 }

@@ -1,33 +1,13 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import * as AuthSession from 'expo-auth-session';
-import { makeRedirectUri } from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { db } from '../db/client';
-
-WebBrowser.maybeCompleteAuthSession();
 
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID!;
 
-const discovery = {
-  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-  tokenEndpoint: 'https://oauth2.googleapis.com/token',
-};
-
-export function useGoogleAuth() {
-  const redirectUri = makeRedirectUri({ scheme: 'billkato' });
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: GOOGLE_CLIENT_ID,
-      scopes: [
-        'https://www.googleapis.com/auth/drive.appdata',
-      ],
-      responseType: AuthSession.ResponseType.Token,
-      redirectUri,
-    },
-    discovery
-  );
-  return { request, response, promptAsync };
-}
+GoogleSignin.configure({
+  scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+  webClientId: GOOGLE_CLIENT_ID,
+});
 
 export async function backupToDrive(accessToken: string): Promise<{ fileId: string }> {
   const docDir = FileSystem.documentDirectory ?? '';

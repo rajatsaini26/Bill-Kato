@@ -3,7 +3,13 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useAppStore } from '../store/useAppStore';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import '../db/client';
+
+GoogleSignin.configure({
+  scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID,
+});
 
 export default function RootLayout() {
   const { isLoggedIn } = useAppStore();
