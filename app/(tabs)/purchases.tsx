@@ -5,43 +5,17 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Colors, Spacing, FontSize } from '../../constants/theme';
 import { getPurchaseInvoices, PurchaseInvoice, getPurchaseInvoiceById, deleteMultiplePurchaseInvoices } from '../../db/queries/purchases';
-import { toShortDate, toMonthKey, toStorableDate } from '../../utils/dateFormat';
+import { toShortDate, toStorableDate } from '../../utils/dateFormat';
 import { buildPurchaseInvoiceHTML } from '../../services/pdfTemplate';
 import { generateAndShareBulkPDF } from '../../services/shareInvoice';
 import { db } from '../../db/client';
-
-function MonthPicker({ selected, onChange }: { selected: string | null; onChange: (v: string | null) => void }) {
-  const options = [null, ...Array.from({ length: 12 }, (_, i) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  })];
-
-  return (
-    <FlatList
-      horizontal
-      data={options}
-      keyExtractor={(item) => item ?? 'all'}
-      showsHorizontalScrollIndicator={false}
-      style={{ maxHeight: 40, marginBottom: Spacing.sm }}
-      renderItem={({ item }) => (
-        <TouchableOpacity
-          onPress={() => onChange(item)}
-          style={[styles.filterChip, selected === item && { backgroundColor: Colors.success }]}
-        >
-          <Text style={[styles.filterChipText, selected === item && { color: '#fff' }]}>
-            {item ? item : 'All'}
-          </Text>
-        </TouchableOpacity>
-      )}
-    />
-  );
-}
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 export default function PurchasesScreen() {
   const router = useRouter();
-  const currentMonth = toMonthKey(toStorableDate());
-  const [selectedMonth, setSelectedMonth] = useState<string | null>(currentMonth);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
+  const [showPickerFor, setShowPickerFor] = useState<'start' | 'end' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -50,13 +24,14 @@ export default function PurchasesScreen() {
   const loadInvoices = useCallback(() => {
     try {
       setInvoices(getPurchaseInvoices({
-        month: selectedMonth ?? undefined,
+        startDate: startDate ?? undefined,
+        endDate: endDate ?? undefined,
         searchQuery: searchQuery || undefined,
       }));
     } catch (e: any) {
       Alert.alert('Error', e.message);
     }
-  }, [selectedMonth, searchQuery]);
+  }, [startDate, endDate, searchQuery]);
 
   useFocusEffect(useCallback(() => { loadInvoices(); }, [loadInvoices]));
 
@@ -157,7 +132,41 @@ export default function PurchasesScreen() {
         </View>
       )}
 
-      <MonthPicker selected={selectedMonth} onChange={setSelectedMonth} />
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: Spacing.sm }}>
+        <TouchableOpacity onPress={() => setShowPickerFor('start')} style={[styles.filterChip, startDate ? { backgroundColor: Colors.success } : {}]}>
+          <Text style={[styles.filterChipText, startDate ? { color: '#fff' } : {}]}>
+            {startDate ? `Start: ${toShortDate(startDate)}` : 'Start Date'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowPickerFor('end')} style={[styles.filterChip, endDate ? { backgroundColor: Colors.success } : {}]}>
+          <Text style={[styles.filterChipText, endDate ? { color: '#fff' } : {}]}>
+            {endDate ? `End: ${toShortDate(endDate)}` : 'End Date'}
+          </Text>
+        </TouchableOpacity>
+        {(startDate || endDate) && (
+          <TouchableOpacity onPress={() => { setStartDate(null); setEndDate(null); }} style={styles.filterChip}>
+            <Text style={styles.filterChipText}>Clear</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {showPickerFor && (
+        <DateTimePicker
+          value={showPickerFor === 'start' ? (startDate ? new Date(startDate) : new Date()) : (endDate ? new Date(endDate) : new Date())}
+          mode="date"
+          display="default"
+          onValueChange={(event, date) => {
+            const pickerMode = showPickerFor;
+            setShowPickerFor(null);
+            if (date) {
+              const formatted = toStorableDate(date).split('T')[0];
+              if (pickerMode === 'start') setStartDate(formatted);
+              else setEndDate(formatted);
+            }
+          }}
+          onDismiss={() => setShowPickerFor(null)}
+        />
+      )}
       
       <FlatList
         data={invoices}

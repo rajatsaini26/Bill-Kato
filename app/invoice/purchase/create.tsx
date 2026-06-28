@@ -188,7 +188,7 @@ export default function CreatePurchaseInvoiceScreen() {
           items: itemsData.map((it, idx) => ({ ...it, id: idx, invoice_id: id })),
         };
         const shop = getShop();
-        const html = buildPurchaseInvoiceHTML(fullInv as any, shop);
+        const html = await buildPurchaseInvoiceHTML(fullInv as any, shop);
         try {
           await generateAndSharePurchasePDF(html, id);
         } catch (e: any) {
@@ -238,10 +238,11 @@ export default function CreatePurchaseInvoiceScreen() {
             value={new Date(invoiceDate)}
             mode="date"
             display="default"
-            onChange={(event, selectedDate) => {
+            onValueChange={(event, date) => {
               setShowDatePicker(false);
-              if (selectedDate) setInvoiceDate(toStorableDate(selectedDate));
+              if (date) setInvoiceDate(toStorableDate(date));
             }}
+            onDismiss={() => setShowDatePicker(false)}
           />
         )}
       </View>

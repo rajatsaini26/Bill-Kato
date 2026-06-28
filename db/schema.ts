@@ -81,6 +81,7 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
       item_name       TEXT NOT NULL UNIQUE,
       unit            TEXT DEFAULT 'pcs',
       current_stock   REAL NOT NULL DEFAULT 0,
+      purchase_cost   REAL NOT NULL DEFAULT 0,
       default_price   REAL NOT NULL DEFAULT 0
     );
 
@@ -102,7 +103,8 @@ export function runMigrations(db: SQLite.SQLiteDatabase) {
     { table: 'sale_invoices', col: 'payment_status TEXT DEFAULT "Paid"' },
     { table: 'sale_invoices', col: 'invoice_type TEXT DEFAULT "sale"' },
     { table: 'purchase_invoices', col: 'amount_paid REAL NOT NULL DEFAULT 0' },
-    { table: 'purchase_invoices', col: 'payment_status TEXT DEFAULT "Paid"' }
+    { table: 'purchase_invoices', col: 'payment_status TEXT DEFAULT "Paid"' },
+    { table: 'inventory_items', col: 'purchase_cost REAL NOT NULL DEFAULT 0' }
   ];
 
   for (const { table, col } of columnsToAdd) {

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Colors, Spacing, FontSize } from '../../constants/theme';
 import { db } from '../../db/client';
@@ -9,12 +9,21 @@ interface InventoryItem {
   item_name: string;
   unit: string;
   current_stock: number;
+  purchase_cost: number;
   default_price: number;
 }
 
 export default function InventoryScreen() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [search, setSearch] = useState('');
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemUnit, setNewItemUnit] = useState('kg');
+  const [newItemCost, setNewItemCost] = useState('');
+  const [newItemPrice, setNewItemPrice] = useState('');
+  const [newItemStock, setNewItemStock] = useState('');
+
+  const METRIC_UNITS = ['kg', 'g', 'L', 'ml', 'm', 'cm', 'pcs(pieces)', 'box', 'feet'];
 
   const loadItems = () => {
     try {
@@ -28,6 +37,38 @@ export default function InventoryScreen() {
     }
   };
 
+  const handleAddItem = () => {
+    if (!newItemName.trim()) {
+      Alert.alert('Validation Error', 'Item name is required.');
+      return;
+    }
+    const cost = parseFloat(newItemCost) || 0;
+    const price = parseFloat(newItemPrice) || 0;
+    const stock = parseFloat(newItemStock) || 0;
+
+    try {
+      db.runSync(
+        `INSERT INTO inventory_items (item_name, unit, purchase_cost, default_price, current_stock) 
+         VALUES (?, ?, ?, ?, ?)`,
+        [newItemName.trim(), newItemUnit, cost, price, stock]
+      );
+      Alert.alert('Success', 'Item added to inventory.');
+      setIsModalVisible(false);
+      setNewItemName('');
+      setNewItemCost('');
+      setNewItemPrice('');
+      setNewItemStock('');
+      setNewItemUnit('kg');
+      loadItems();
+    } catch (e: any) {
+      if (e.message.includes('UNIQUE constraint failed')) {
+        Alert.alert('Error', 'An item with this name already exists.');
+      } else {
+        Alert.alert('Error', 'Could not save item.');
+      }
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       loadItems();
@@ -37,13 +78,18 @@ export default function InventoryScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search inventory..."
-          placeholderTextColor="#6b7280"
-          value={search}
-          onChangeText={setSearch}
-        />
+        <View style={styles.headerTop}>
+          <TextInput
+            style={[styles.searchInput, { flex: 1, marginRight: Spacing.sm }]}
+            placeholder="Search inventory..."
+            placeholderTextColor="#6b7280"
+            value={search}
+            onChangeText={setSearch}
+          />
+          <TouchableOpacity style={styles.addBtn} onPress={() => setIsModalVisible(true)}>
+            <Text style={styles.addBtnText}>+ Add</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -60,7 +106,8 @@ export default function InventoryScreen() {
           <View style={styles.card}>
             <View style={styles.cardInfo}>
               <Text style={styles.itemName}>{item.item_name}</Text>
-              <Text style={styles.itemMeta}>Unit: {item.unit} • Def Price: ₹{item.default_price.toFixed(2)}</Text>
+              <Text style={styles.itemMeta}>Unit: {item.unit}</Text>
+              <Text style={styles.itemMeta}>Buy: ₹{item.purchase_cost?.toFixed(2) || '0.00'} • Sell: ₹{item.default_price?.toFixed(2) || '0.00'}</Text>
             </View>
             <View style={styles.stockInfo}>
               <Text style={[styles.stockText, item.current_stock < 0 && styles.negativeStock]}>
@@ -71,6 +118,51 @@ export default function InventoryScreen() {
           </View>
         )}
       />
+
+      <Modal
+        visible={isModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsModalVisible(false)}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add New Item</Text>
+              <TouchableOpacity onPress={() => setIsModalVisible(false)}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalForm}>
+              <Text style={styles.label}>Item Name *</Text>
+              <TextInput style={styles.input} placeholderTextColor="#6b7280" placeholder="e.g. Rice, Sugar" value={newItemName} onChangeText={setNewItemName} />
+
+              <Text style={styles.label}>Unit</Text>
+              <View style={styles.unitsContainer}>
+                {METRIC_UNITS.map(u => (
+                  <TouchableOpacity key={u} style={[styles.unitBtn, newItemUnit === u && styles.unitBtnActive]} onPress={() => setNewItemUnit(u)}>
+                    <Text style={[styles.unitBtnText, newItemUnit === u && styles.unitBtnTextActive]}>{u}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.label}>Purchase Cost (₹)</Text>
+              <TextInput style={styles.input} placeholderTextColor="#6b7280" placeholder="0.00" value={newItemCost} onChangeText={setNewItemCost} keyboardType="decimal-pad" />
+
+              <Text style={styles.label}>Sell Price (₹)</Text>
+              <TextInput style={styles.input} placeholderTextColor="#6b7280" placeholder="0.00" value={newItemPrice} onChangeText={setNewItemPrice} keyboardType="decimal-pad" />
+
+              <Text style={styles.label}>Opening Quantity</Text>
+              <TextInput style={styles.input} placeholderTextColor="#6b7280" placeholder="0" value={newItemStock} onChangeText={setNewItemStock} keyboardType="decimal-pad" />
+
+              <TouchableOpacity style={styles.saveBtn} onPress={handleAddItem}>
+                <Text style={styles.saveBtnText}>Save Item</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -84,10 +176,26 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     backgroundColor: Colors.primary,
   },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   searchInput: {
     backgroundColor: '#fff',
     borderRadius: 8,
     padding: 10,
+    fontSize: FontSize.md,
+  },
+  addBtn: {
+    backgroundColor: Colors.success,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  addBtnText: {
+    color: '#fff',
+    fontWeight: '700',
     fontSize: FontSize.md,
   },
   listContent: {
@@ -152,5 +260,90 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: Spacing.lg,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  modalTitle: {
+    fontSize: FontSize.xl,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+  },
+  modalClose: {
+    fontSize: 24,
+    color: Colors.textSecondary,
+    padding: 4,
+  },
+  modalForm: {
+    paddingBottom: 40,
+  },
+  label: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    marginTop: Spacing.sm,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+    backgroundColor: Colors.background,
+  },
+  unitsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  unitBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  unitBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  unitBtnText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  unitBtnTextActive: {
+    color: '#fff',
+  },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    padding: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: Spacing.xl,
+    marginBottom: 20,
+  },
+  saveBtnText: {
+    color: '#fff',
+    fontSize: FontSize.md,
+    fontWeight: '700',
   },
 });

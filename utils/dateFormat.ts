@@ -1,7 +1,7 @@
 import { format, parseISO } from 'date-fns';
 
 // Store in DB always as: new Date().toISOString() → "2024-06-27T14:30:00.000Z"
-export const toStorableDate = (): string => new Date().toISOString();
+export const toStorableDate = (date?: Date): string => (date || new Date()).toISOString();
 
 // Display: "27 Jun 2024, 02:30 PM"
 export const toDisplayDate = (iso: string): string =>

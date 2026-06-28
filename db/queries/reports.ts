@@ -22,7 +22,29 @@ export interface InvoicePnL {
   marginPct: number;
 }
 
-export function getMonthlyPnL(): MonthlyPnL[] {
+export function getMonthlyPnL(startDate?: string | null, endDate?: string | null): MonthlyPnL[] {
+  let salesWhere = "";
+  let purchWhere = "";
+  let salesParams: string[] = [];
+  let purchParams: string[] = [];
+  
+  if (startDate && endDate) {
+    salesWhere = "WHERE date(s.invoice_date) BETWEEN ? AND ?";
+    purchWhere = "WHERE date(invoice_date) BETWEEN ? AND ?";
+    salesParams.push(startDate, endDate);
+    purchParams.push(startDate, endDate);
+  } else if (startDate) {
+    salesWhere = "WHERE date(s.invoice_date) >= ?";
+    purchWhere = "WHERE date(invoice_date) >= ?";
+    salesParams.push(startDate);
+    purchParams.push(startDate);
+  } else if (endDate) {
+    salesWhere = "WHERE date(s.invoice_date) <= ?";
+    purchWhere = "WHERE date(invoice_date) <= ?";
+    salesParams.push(endDate);
+    purchParams.push(endDate);
+  }
+
   // Sales revenue and COGS
   const salesRows = db.getAllSync<{ month: string; total: number; cogs: number }>(
     `SELECT 
@@ -31,13 +53,16 @@ export function getMonthlyPnL(): MonthlyPnL[] {
       SUM(CASE WHEN s.invoice_type = 'return' THEN -(i.cost_price * i.quantity) ELSE (i.cost_price * i.quantity) END) AS cogs
      FROM sale_invoices s
      LEFT JOIN sale_invoice_items i ON s.id = i.invoice_id
-     GROUP BY month ORDER BY month DESC`
+     ${salesWhere}
+     GROUP BY month ORDER BY month DESC`,
+    salesParams
   );
   
   // Purchases (Assets)
   const purchaseRows = db.getAllSync<{ month: string; total: number }>(
     `SELECT strftime('%Y-%m', invoice_date) AS month, SUM(total) AS total
-     FROM purchase_invoices GROUP BY month ORDER BY month DESC`
+     FROM purchase_invoices ${purchWhere} GROUP BY month ORDER BY month DESC`,
+    purchParams
   );
 
   const map: Record<string, MonthlyPnL> = {};
@@ -59,7 +84,29 @@ export function getMonthlyPnL(): MonthlyPnL[] {
   return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
 }
 
-export function getQuarterlyPnL(): QuarterlyPnL[] {
+export function getQuarterlyPnL(startDate?: string | null, endDate?: string | null): QuarterlyPnL[] {
+  let salesWhere = "";
+  let purchWhere = "";
+  let salesParams: string[] = [];
+  let purchParams: string[] = [];
+  
+  if (startDate && endDate) {
+    salesWhere = "WHERE date(s.invoice_date) BETWEEN ? AND ?";
+    purchWhere = "WHERE date(invoice_date) BETWEEN ? AND ?";
+    salesParams.push(startDate, endDate);
+    purchParams.push(startDate, endDate);
+  } else if (startDate) {
+    salesWhere = "WHERE date(s.invoice_date) >= ?";
+    purchWhere = "WHERE date(invoice_date) >= ?";
+    salesParams.push(startDate);
+    purchParams.push(startDate);
+  } else if (endDate) {
+    salesWhere = "WHERE date(s.invoice_date) <= ?";
+    purchWhere = "WHERE date(invoice_date) <= ?";
+    salesParams.push(endDate);
+    purchParams.push(endDate);
+  }
+
   const salesRows = db.getAllSync<{ year: string; quarter: string; total: number; cogs: number }>(
     `SELECT
       strftime('%Y', s.invoice_date) AS year,
@@ -73,7 +120,9 @@ export function getQuarterlyPnL(): QuarterlyPnL[] {
       SUM(CASE WHEN s.invoice_type = 'return' THEN -(i.cost_price * i.quantity) ELSE (i.cost_price * i.quantity) END) AS cogs
      FROM sale_invoices s
      LEFT JOIN sale_invoice_items i ON s.id = i.invoice_id
-     GROUP BY year, quarter ORDER BY year DESC, quarter DESC`
+     ${salesWhere}
+     GROUP BY year, quarter ORDER BY year DESC, quarter DESC`,
+    salesParams
   );
   const purchaseRows = db.getAllSync<{ year: string; quarter: string; total: number }>(
     `SELECT
@@ -85,7 +134,8 @@ export function getQuarterlyPnL(): QuarterlyPnL[] {
         ELSE 'Q4'
       END AS quarter,
       SUM(total) AS total
-     FROM purchase_invoices GROUP BY year, quarter ORDER BY year DESC, quarter DESC`
+     FROM purchase_invoices ${purchWhere} GROUP BY year, quarter ORDER BY year DESC, quarter DESC`,
+    purchParams
   );
 
   const map: Record<string, QuarterlyPnL> = {};

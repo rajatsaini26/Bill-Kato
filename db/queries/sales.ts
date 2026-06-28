@@ -127,13 +127,24 @@ export function updateSaleInvoice(id: number, data: CreateSaleInvoiceInput): voi
   }
 }
 
-export function getSaleInvoices(filters?: { month?: string; quarter?: string; searchQuery?: string }): SaleInvoice[] {
+export function getSaleInvoices(filters?: { month?: string; startDate?: string; endDate?: string; quarter?: string; searchQuery?: string }): SaleInvoice[] {
   let query = `SELECT * FROM sale_invoices WHERE 1=1`;
   const params: string[] = [];
   
   if (filters?.month) {
     query += ` AND strftime('%Y-%m', invoice_date) = ?`;
     params.push(filters.month);
+  }
+
+  if (filters?.startDate && filters?.endDate) {
+    query += ` AND date(invoice_date) BETWEEN ? AND ?`;
+    params.push(filters.startDate, filters.endDate);
+  } else if (filters?.startDate) {
+    query += ` AND date(invoice_date) >= ?`;
+    params.push(filters.startDate);
+  } else if (filters?.endDate) {
+    query += ` AND date(invoice_date) <= ?`;
+    params.push(filters.endDate);
   }
   
   if (filters?.searchQuery) {

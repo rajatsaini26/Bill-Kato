@@ -31,10 +31,11 @@ export default function RootLayout() {
     if (isLoggedIn) {
       const today = new Date().toISOString().slice(0, 10);
       try {
-        const lastBackup = db.getFirstSync<{ created_at: string }>(
-          `SELECT created_at FROM backup_log WHERE status = 'success' ORDER BY created_at DESC LIMIT 1`
+        const { db } = require('../db/client');
+        const lastBackup = db.getFirstSync(
+          `SELECT backed_up_at FROM backup_log WHERE status = 'success' ORDER BY backed_up_at DESC LIMIT 1`
         );
-        if (!lastBackup || !lastBackup.created_at.startsWith(today)) {
+        if (!lastBackup || !lastBackup.backed_up_at.startsWith(today)) {
           GoogleSignin.signInSilently()
             .then(() => GoogleSignin.getTokens())
             .then(({ accessToken }) => {

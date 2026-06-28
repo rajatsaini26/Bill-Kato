@@ -2,13 +2,13 @@
   "expo": {
     "name": "Bill Kato",
     "slug": "billkato",
-    "owner": "rajattak27",
+    "owner": "rajattak28",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "extra": {
       "eas": {
-        "projectId": "58bfa34b-2513-448c-9893-dc38db225861"
+        "projectId": "cbbe1460-dfd1-468f-961a-3aa6e3daeb7a"
       }
     },
     "splash": {

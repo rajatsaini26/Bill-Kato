@@ -111,13 +111,24 @@ export function updatePurchaseInvoice(id: number, data: CreatePurchaseInvoiceInp
   }
 }
 
-export function getPurchaseInvoices(filters?: { month?: string; quarter?: string; searchQuery?: string }): PurchaseInvoice[] {
+export function getPurchaseInvoices(filters?: { month?: string; startDate?: string; endDate?: string; quarter?: string; searchQuery?: string }): PurchaseInvoice[] {
   let query = `SELECT * FROM purchase_invoices WHERE 1=1`;
   const params: string[] = [];
   
   if (filters?.month) {
     query += ` AND strftime('%Y-%m', invoice_date) = ?`;
     params.push(filters.month);
+  }
+
+  if (filters?.startDate && filters?.endDate) {
+    query += ` AND date(invoice_date) BETWEEN ? AND ?`;
+    params.push(filters.startDate, filters.endDate);
+  } else if (filters?.startDate) {
+    query += ` AND date(invoice_date) >= ?`;
+    params.push(filters.startDate);
+  } else if (filters?.endDate) {
+    query += ` AND date(invoice_date) <= ?`;
+    params.push(filters.endDate);
   }
 
   if (filters?.searchQuery) {

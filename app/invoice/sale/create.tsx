@@ -42,13 +42,13 @@ export default function CreateSaleInvoiceScreen() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [taxPct, setTaxPct] = useState('0');
-  const [paymentStatus, setPaymentStatus] = useState<'Paid' | 'Unpaid' | 'Partial'>('Paid');
   const [amountPaid, setAmountPaid] = useState('');
   const [invoiceType, setInvoiceType] = useState<'sale' | 'return'>('sale');
   
   const [items, setItems] = useState<Item[]>([emptyItem()]);
   const [loading, setLoading] = useState(false);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [editingItemIndex, setEditingItemIndex] = useState<number>(0);
   const [focusedItemIndex, setFocusedItemIndex] = useState<number | null>(null);
   
   const [customerSuggestions, setCustomerSuggestions] = useState<string[]>([]);
@@ -71,7 +71,6 @@ export default function CreateSaleInvoiceScreen() {
           setCustomerPhone(inv.customer_phone);
           setInvoiceDate(inv.invoice_date);
           setNotes(inv.notes);
-          setPaymentStatus(inv.payment_status as any || 'Paid');
           setInvoiceType(inv.invoice_type as 'sale' | 'return' || 'sale');
           setAmountPaid(inv.amount_paid > 0 ? inv.amount_paid.toString() : '');
           setTaxPct(inv.subtotal > 0 ? ((inv.tax_amount / inv.subtotal) * 100).toFixed(2).replace(/\.00$/, '') : '0');
@@ -123,10 +122,18 @@ export default function CreateSaleInvoiceScreen() {
     setFocusedItemIndex(null);
   };
 
-  const addItem = () => setItems([...items, emptyItem()]);
+  const addItem = () => {
+    setItems([...items, emptyItem()]);
+    setEditingItemIndex(items.length);
+  };
   const removeItem = (index: number) => {
     if (items.length === 1) return;
     setItems(items.filter((_, i) => i !== index));
+    if (editingItemIndex === index) {
+      setEditingItemIndex(Math.max(0, index - 1));
+    } else if (editingItemIndex > index) {
+      setEditingItemIndex(editingItemIndex - 1);
+    }
   };
 
   const computedItems = items.map((item) => {
@@ -163,7 +170,10 @@ export default function CreateSaleInvoiceScreen() {
     setLoading(true);
     try {
       const invoiceNumber = editId ? editInvoiceNumber : nextInvoiceNumber('SALE');
-      const finalAmountPaid = paymentStatus === 'Paid' ? grandTotal : paymentStatus === 'Unpaid' ? 0 : parseFloat(amountPaid) || 0;
+      const finalAmountPaid = parseFloat(amountPaid) || 0;
+      let derivedPaymentStatus = 'Unpaid';
+      if (finalAmountPaid >= grandTotal) derivedPaymentStatus = 'Paid';
+      else if (finalAmountPaid > 0) derivedPaymentStatus = 'Partial';
       
       const itemsData = computedItems.map((i) => ({
         item_name: i.item_name,
@@ -185,9 +195,9 @@ export default function CreateSaleInvoiceScreen() {
         tax_amount: taxAmt,
         total: grandTotal,
         notes,
-        status: paymentStatus.toLowerCase(),
+        status: derivedPaymentStatus.toLowerCase(),
         amount_paid: finalAmountPaid,
-        payment_status: paymentStatus,
+        payment_status: derivedPaymentStatus,
         invoice_type: invoiceType,
         items: itemsData,
       };
@@ -202,7 +212,7 @@ export default function CreateSaleInvoiceScreen() {
       if (share) {
         const full = { ...getInvoiceForPdf(id, invoiceNumber, finalAmountPaid), items: itemsData.map((it, idx) => ({ ...it, id: idx, invoice_id: id })) };
         const shop = getShop();
-        const html = buildSaleInvoiceHTML(full as any, shop);
+        const html = await buildSaleInvoiceHTML(full as any, shop);
         try {
           await generateAndShareSalePDF(html, id);
         } catch (e: any) {
@@ -228,9 +238,9 @@ export default function CreateSaleInvoiceScreen() {
     tax_amount: taxAmt,
     total: grandTotal,
     notes,
-    status: paymentStatus.toLowerCase(),
+    status: (finalAmountPaid >= grandTotal ? 'paid' : finalAmountPaid > 0 ? 'partial' : 'unpaid'),
     amount_paid: finalAmountPaid,
-    payment_status: paymentStatus,
+    payment_status: (finalAmountPaid >= grandTotal ? 'Paid' : finalAmountPaid > 0 ? 'Partial' : 'Unpaid'),
     invoice_type: invoiceType,
     pdf_uri: '',
     created_at: invoiceDate,
@@ -283,10 +293,11 @@ export default function CreateSaleInvoiceScreen() {
             value={new Date(invoiceDate)}
             mode="date"
             display="default"
-            onChange={(event, selectedDate) => {
+            onValueChange={(event, date) => {
               setShowDatePicker(false);
-              if (selectedDate) setInvoiceDate(toStorableDate(selectedDate));
+              if (date) setInvoiceDate(toStorableDate(date));
             }}
+            onDismiss={() => setShowDatePicker(false)}
           />
         )}
       </View>
@@ -296,15 +307,42 @@ export default function CreateSaleInvoiceScreen() {
         <Text style={styles.sectionTitle}>Items</Text>
         {items.map((item, index) => {
           const suggestions = inventory.filter(inv => inv.item_name.toLowerCase().includes(item.item_name.toLowerCase()) && item.item_name.length > 0 && inv.item_name !== item.item_name);
+          const isEditing = editingItemIndex === index;
+          
+          if (!isEditing) {
+            return (
+              <TouchableOpacity key={index} style={styles.compactItemCard} onPress={() => setEditingItemIndex(index)}>
+                <View style={styles.compactItemInfo}>
+                  <Text style={styles.compactItemName}>{item.item_name || `Item ${index + 1} (Empty)`}</Text>
+                  <Text style={styles.compactItemMeta}>
+                    Qty: {item.quantity || '0'} {item.unit} | Price: ₹{item.unit_price || '0'}
+                    {parseFloat(item.discount_pct) > 0 ? ` | Disc: ${item.discount_pct}%` : ''}
+                  </Text>
+                </View>
+                <View style={styles.compactItemRight}>
+                  <Text style={styles.compactItemTotal}>
+                    ₹{calcLineTotals(parseFloat(item.quantity) || 0, parseFloat(item.unit_price) || 0, parseFloat(item.discount_pct) || 0).toFixed(2)}
+                  </Text>
+                  <Text style={styles.editIcon}>✎</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }
+
           return (
             <View key={index} style={styles.itemCard}>
               <View style={styles.itemHeader}>
                 <Text style={styles.itemIndex}>Item {index + 1}</Text>
-                {items.length > 1 && (
-                  <TouchableOpacity onPress={() => removeItem(index)}>
-                    <Text style={{ color: Colors.danger, fontSize: 18 }}>🗑</Text>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity onPress={() => setEditingItemIndex(-1)} style={styles.doneBtn}>
+                    <Text style={styles.doneBtnText}>Done</Text>
                   </TouchableOpacity>
-                )}
+                  {items.length > 1 && (
+                    <TouchableOpacity onPress={() => removeItem(index)}>
+                      <Text style={{ color: Colors.danger, fontSize: 18 }}>🗑</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
               
               <TextInput 
@@ -379,31 +417,27 @@ export default function CreateSaleInvoiceScreen() {
 
       {/* Status */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Payment Status</Text>
-        <View style={styles.statusRow}>
-          {(['Paid', 'Unpaid', 'Partial'] as const).map((s) => (
-            <TouchableOpacity
-              key={s}
-              onPress={() => setPaymentStatus(s)}
-              style={[styles.statusBtn, paymentStatus === s && statusBtnActive(s)]}
-            >
-              <Text style={[styles.statusBtnText, paymentStatus === s && { color: '#fff' }]}>{s}</Text>
-            </TouchableOpacity>
-          ))}
+        <Text style={styles.sectionTitle}>Payment Details</Text>
+        <TextInput 
+          style={[styles.input, { borderColor: Colors.primary, borderWidth: 1.5, fontSize: FontSize.md, marginTop: 8 }]} 
+          placeholderTextColor="#6b7280" 
+          placeholder="Amount Received ₹" 
+          value={amountPaid} 
+          onChangeText={setAmountPaid} 
+          keyboardType="decimal-pad" 
+        />
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Balance Due</Text>
+          <Text style={[styles.totalValue, { color: Colors.danger }]}>₹{Math.max(0, grandTotal - (parseFloat(amountPaid) || 0)).toFixed(2)}</Text>
         </View>
-        
-        {paymentStatus === 'Partial' && (
-          <View style={{ marginTop: Spacing.sm }}>
-            <TextInput 
-              style={[styles.input, { borderColor: Colors.warning, borderWidth: 1.5 }]} 
-              placeholderTextColor="#000000" 
-              placeholder="Amount Paid ₹" 
-              value={amountPaid} 
-              onChangeText={setAmountPaid} 
-              keyboardType="decimal-pad" 
-            />
-          </View>
-        )}
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Status</Text>
+          <Text style={[styles.totalValue, { 
+            color: (parseFloat(amountPaid) || 0) >= grandTotal ? Colors.success : (parseFloat(amountPaid) || 0) > 0 ? Colors.warning : Colors.danger 
+          }]}>
+            {(parseFloat(amountPaid) || 0) >= grandTotal ? 'Paid' : (parseFloat(amountPaid) || 0) > 0 ? 'Partial' : 'Unpaid'}
+          </Text>
+        </View>
       </View>
 
       {/* Buttons */}
@@ -418,12 +452,6 @@ export default function CreateSaleInvoiceScreen() {
     </ScrollView>
   );
 }
-
-const statusBtnActive = (s: string) => ({
-  backgroundColor: s === 'Paid' ? Colors.success : s === 'Unpaid' ? Colors.danger : Colors.warning,
-  borderColor: 'transparent',
-});
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   section: { backgroundColor: Colors.surface, margin: Spacing.md, borderRadius: 12, padding: Spacing.md, elevation: 1 },
@@ -439,6 +467,15 @@ const styles = StyleSheet.create({
   itemCard: { borderWidth: 1, borderColor: Colors.border, borderRadius: 10, padding: Spacing.sm, marginBottom: Spacing.sm, backgroundColor: Colors.background, zIndex: 1 },
   itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   itemIndex: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.primary },
+  doneBtn: { backgroundColor: Colors.success, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  doneBtnText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  compactItemCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 12, marginBottom: Spacing.sm },
+  compactItemInfo: { flex: 1 },
+  compactItemName: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
+  compactItemMeta: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  compactItemRight: { alignItems: 'flex-end', flexDirection: 'row', gap: 8 },
+  compactItemTotal: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.primary },
+  editIcon: { fontSize: 16, color: Colors.textSecondary },
   row: { flexDirection: 'row', gap: Spacing.sm },
   flex1: { flex: 1 },
   lineTotal: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.primary, textAlign: 'right' },
