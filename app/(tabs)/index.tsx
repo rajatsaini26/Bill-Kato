@@ -1,19 +1,17 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  FlatList,
-  TouchableOpacity,
-  Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Alert, Animated, Image,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Colors, Spacing, FontSize } from '../../constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, Spacing, FontSize, FontFamily, Radius, Shadow } from '../../constants/theme';
 import { getDashboardStats } from '../../db/queries/reports';
 import { getRecentSaleInvoices, SaleInvoice } from '../../db/queries/sales';
 import { getRecentPurchaseInvoices, PurchaseInvoice } from '../../db/queries/purchases';
 import { toShortDate } from '../../utils/dateFormat';
+import { useAppStore } from '../../store/useAppStore';
+import { db } from '../../db/client';
 
 interface DashboardStats {
   todaySales: number;
@@ -27,163 +25,249 @@ function fmt(n: number) {
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 }
 
-export default function DashboardScreen() {
-  const router = useRouter();
-  const [stats, setStats] = useState<DashboardStats>({
-    todaySales: 0, todayPurchases: 0, monthSales: 0, monthPurchases: 0, monthProfit: 0,
-  });
-  const [recentSales, setRecentSales] = useState<SaleInvoice[]>([]);
-  const [recentPurchases, setRecentPurchases] = useState<PurchaseInvoice[]>([]);
-
-  useFocusEffect(
-    useCallback(() => {
-      try {
-        setStats(getDashboardStats());
-        setRecentSales(getRecentSaleInvoices(5));
-        setRecentPurchases(getRecentPurchaseInvoices(5));
-      } catch (e: any) {
-        Alert.alert('Error', e.message);
-      }
-    }, [])
-  );
+function StatCard({ value, label, color, icon, delay = 0 }: {
+  value: string; label: string; color: string; icon: React.ComponentProps<typeof Ionicons>['name']; delay?: number;
+}) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const slide = useRef(new Animated.Value(16)).current;
+  useFocusEffect(useCallback(() => {
+    anim.setValue(0); slide.setValue(16);
+    Animated.parallel([
+      Animated.timing(anim, { toValue: 1, duration: 380, delay, useNativeDriver: true }),
+      Animated.timing(slide, { toValue: 0, duration: 380, delay, useNativeDriver: true }),
+    ]).start();
+  }, []));
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }}>
-      {/* Stats Grid */}
-      <View style={styles.gridRow}>
-        {[
-          { value: fmt(stats.todaySales), sub: "Today's Sales", color: Colors.primary },
-          { value: fmt(stats.todayPurchases), sub: "Today's Purchases", color: Colors.warning },
-        ].map((card, i) => (
-          <View key={i} style={[styles.statCard, { borderTopColor: card.color }]}>
-            <Text style={[styles.statValue, { color: card.color }]}>{card.value}</Text>
-            <Text style={styles.statLabel}>{card.sub}</Text>
-          </View>
-        ))}
+    <Animated.View style={[styles.statCard, { opacity: anim, transform: [{ translateY: slide }] }]}>
+      <View style={[styles.statIconWrap, { backgroundColor: color + '18' }]}>
+        <Ionicons name={icon} size={18} color={color} />
       </View>
-      <View style={styles.gridRow}>
-        {[
-          { value: fmt(stats.monthSales), sub: 'Month Sales', color: Colors.primary },
-          {
-            value: fmt(stats.monthProfit),
-            sub: 'Month Profit',
-            color: stats.monthProfit >= 0 ? Colors.success : Colors.danger,
-          },
-        ].map((card, i) => (
-          <View key={i} style={[styles.statCard, { borderTopColor: card.color }]}>
-            <Text style={[styles.statValue, { color: card.color }]}>{card.value}</Text>
-            <Text style={styles.statLabel}>{card.sub}</Text>
+      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </Animated.View>
+  );
+}
+
+type ActivityItem =
+  | { kind: 'sale'; data: SaleInvoice }
+  | { kind: 'purchase'; data: PurchaseInvoice };
+
+export default function DashboardScreen() {
+  const router = useRouter();
+  const shopName = useAppStore((s) => s.shopName);
+  const [stats, setStats] = React.useState<DashboardStats>({
+    todaySales: 0, todayPurchases: 0, monthSales: 0, monthPurchases: 0, monthProfit: 0,
+  });
+  const [activity, setActivity] = React.useState<ActivityItem[]>([]);
+  const [logoUri, setLogoUri] = React.useState<string | null>(null);
+
+  useFocusEffect(useCallback(() => {
+    try {
+      setStats(getDashboardStats());
+      const sales = getRecentSaleInvoices(4).map((d): ActivityItem => ({ kind: 'sale', data: d }));
+      const purchases = getRecentPurchaseInvoices(4).map((d): ActivityItem => ({ kind: 'purchase', data: d }));
+      const merged = [...sales, ...purchases].sort((a, b) => {
+        const da = a.kind === 'sale' ? a.data.invoice_date : (a.data as PurchaseInvoice).invoice_date;
+        const db2 = b.kind === 'sale' ? b.data.invoice_date : (b.data as PurchaseInvoice).invoice_date;
+        return db2.localeCompare(da);
+      });
+      setActivity(merged);
+      const profile = db.getFirstSync<{ logo_uri: string }>(`SELECT logo_uri FROM shop_profile WHERE id = 1`);
+      setLogoUri(profile?.logo_uri || null);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  }, []));
+
+  const cardData: Array<{
+    value: string; label: string; color: string; icon: React.ComponentProps<typeof Ionicons>['name']; delay: number;
+  }> = [
+    { value: fmt(stats.todaySales), label: "Today's Sales", color: Colors.primary, icon: 'trending-up-outline', delay: 0 },
+    { value: fmt(stats.monthSales), label: 'Month Sales', color: Colors.accent, icon: 'calendar-outline', delay: 80 },
+    {
+      value: fmt(stats.monthProfit), label: 'Month Profit',
+      color: stats.monthProfit >= 0 ? Colors.success : Colors.danger,
+      icon: stats.monthProfit >= 0 ? 'wallet-outline' : 'trending-down-outline', delay: 160,
+    },
+    { value: fmt(stats.todayPurchases), label: "Today's Purchases", color: Colors.warning, icon: 'cart-outline', delay: 240 },
+  ];
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+      {/* Hero Banner */}
+      <View style={styles.hero}>
+        <View style={styles.heroLeft}>
+          <Text style={styles.heroGreeting}>Good day 👋</Text>
+          <Text style={styles.heroShop} numberOfLines={1}>{shopName || 'My Business'}</Text>
+          <View style={styles.heroSalesBadge}>
+            <Text style={styles.heroSalesLabel}>Today's Collection</Text>
+            <Text style={styles.heroSalesValue}>{fmt(stats.todaySales)}</Text>
           </View>
-        ))}
+        </View>
+        <TouchableOpacity onPress={() => router.push('/settings')} style={styles.logoCircle}>
+          {logoUri ? (
+            <Image source={{ uri: logoUri }} style={styles.logoImg} />
+          ) : (
+            <View style={styles.logoFallback}>
+              <Text style={styles.logoFallbackText}>{(shopName || 'B').charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
-      {/* Recent Lists */}
-      <View style={styles.listsRow}>
-        {/* Recent Sales */}
-        <View style={styles.listColumn}>
-          <Text style={styles.sectionTitle}>Recent Sales</Text>
-          {recentSales.length === 0 ? (
-            <Text style={styles.emptyText}>No sales yet</Text>
-          ) : (
-            recentSales.map((inv) => (
-              <TouchableOpacity
-                key={inv.id}
-                style={styles.miniCard}
-                onPress={() => router.push(`/invoice/sale/${inv.id}`)}
-              >
-                <Text style={styles.miniInvNo}>{inv.invoice_number}</Text>
-                <Text style={styles.miniParty} numberOfLines={1}>{inv.customer_name || '—'}</Text>
-                <Text style={styles.miniAmount}>₹{inv.total.toFixed(2)}</Text>
-                <Text style={styles.miniDate}>{toShortDate(inv.invoice_date)}</Text>
-              </TouchableOpacity>
-            ))
-          )}
+      {/* Stats 2×2 */}
+      <View style={styles.statsGrid}>
+        <View style={styles.statsRow}>
+          <StatCard {...cardData[0]} />
+          <StatCard {...cardData[1]} />
+        </View>
+        <View style={styles.statsRow}>
+          <StatCard {...cardData[2]} />
+          <StatCard {...cardData[3]} />
+        </View>
+      </View>
+
+      {/* Quick Actions */}
+      <View style={styles.quickRow}>
+        <TouchableOpacity style={[styles.quickBtn, { backgroundColor: Colors.primary }]} onPress={() => router.push('/invoice/sale/create')} activeOpacity={0.85}>
+          <Ionicons name="add-circle-outline" size={18} color="#fff" />
+          <Text style={styles.quickBtnText}>New Sale</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.quickBtn, { backgroundColor: Colors.success }]} onPress={() => router.push('/invoice/purchase/create')} activeOpacity={0.85}>
+          <Ionicons name="cart-outline" size={18} color="#fff" />
+          <Text style={styles.quickBtnText}>New Purchase</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.quickBtn, { backgroundColor: Colors.accent }]} onPress={() => router.push('/(tabs)/reports')} activeOpacity={0.85}>
+          <Ionicons name="bar-chart-outline" size={18} color="#fff" />
+          <Text style={styles.quickBtnText}>Reports</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Recent Activity */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/sales')}>
+            <Text style={styles.sectionLink}>View all</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Recent Purchases */}
-        <View style={styles.listColumn}>
-          <Text style={styles.sectionTitle}>Recent Purchases</Text>
-          {recentPurchases.length === 0 ? (
-            <Text style={styles.emptyText}>No purchases yet</Text>
-          ) : (
-            recentPurchases.map((inv) => (
+        {activity.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Ionicons name="document-text-outline" size={40} color={Colors.textMuted} />
+            <Text style={styles.emptyText}>No recent activity</Text>
+          </View>
+        ) : (
+          activity.map((item, idx) => {
+            const isSale = item.kind === 'sale';
+            const inv = item.data as any;
+            return (
               <TouchableOpacity
-                key={inv.id}
-                style={[styles.miniCard, { borderLeftColor: Colors.success }]}
-                onPress={() => router.push(`/invoice/purchase/${inv.id}`)}
+                key={`${item.kind}-${inv.id}`}
+                style={styles.activityCard}
+                onPress={() => router.push(isSale ? `/invoice/sale/${inv.id}` : `/invoice/purchase/${inv.id}`)}
+                activeOpacity={0.75}
               >
-                <Text style={styles.miniInvNo}>{inv.invoice_number}</Text>
-                <Text style={styles.miniParty} numberOfLines={1}>{inv.vendor_name || '—'}</Text>
-                <Text style={[styles.miniAmount, { color: Colors.success }]}>₹{inv.total.toFixed(2)}</Text>
-                <Text style={styles.miniDate}>{toShortDate(inv.invoice_date)}</Text>
+                <View style={[styles.activityIcon, { backgroundColor: isSale ? Colors.primaryLight : Colors.successLight }]}>
+                  <Ionicons name={isSale ? 'receipt-outline' : 'cart-outline'} size={16} color={isSale ? Colors.primary : Colors.success} />
+                </View>
+                <View style={styles.activityMid}>
+                  <Text style={styles.activityInvNo}>{inv.invoice_number}</Text>
+                  <Text style={styles.activityParty} numberOfLines={1}>
+                    {(isSale ? inv.customer_name : inv.vendor_name) || '—'}
+                  </Text>
+                </View>
+                <View style={styles.activityRight}>
+                  <Text style={[styles.activityAmount, { color: isSale ? Colors.primary : Colors.success }]}>
+                    ₹{inv.total.toFixed(2)}
+                  </Text>
+                  <Text style={styles.activityDate}>{toShortDate(inv.invoice_date)}</Text>
+                </View>
               </TouchableOpacity>
-            ))
-          )}
-        </View>
-      </View>
-
-      {/* FAB Buttons */}
-      <View style={styles.fabRow}>
-        <TouchableOpacity
-          style={styles.fabPrimary}
-          onPress={() => router.push('/invoice/sale/create')}
-        >
-          <Text style={styles.fabText}>＋ Sale</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.fabOutlined}
-          onPress={() => router.push('/invoice/purchase/create')}
-        >
-          <Text style={[styles.fabText, { color: Colors.success }]}>＋ Purchase</Text>
-        </TouchableOpacity>
+            );
+          })
+        )}
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background, padding: Spacing.md },
-  gridRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  container: { flex: 1, backgroundColor: Colors.background },
+
+  hero: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  heroLeft: { flex: 1, marginRight: Spacing.md },
+  heroGreeting: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: 'rgba(255,255,255,0.75)' },
+  heroShop: { fontFamily: FontFamily.extraBold, fontSize: FontSize.xl, color: '#fff', marginTop: 2, marginBottom: Spacing.md },
+  heroSalesBadge: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+  },
+  heroSalesLabel: { fontFamily: FontFamily.medium, fontSize: 10, color: 'rgba(255,255,255,0.8)' },
+  heroSalesValue: { fontFamily: FontFamily.extraBold, fontSize: FontSize.lg, color: '#fff', marginTop: 2 },
+
+  logoCircle: { width: 52, height: 52, borderRadius: 26, overflow: 'hidden', ...Shadow.md },
+  logoImg: { width: '100%', height: '100%' },
+  logoFallback: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  logoFallbackText: { fontFamily: FontFamily.extraBold, fontSize: FontSize.xl, color: '#fff' },
+
+  statsGrid: {
+    paddingHorizontal: Spacing.md,
+    marginTop: -Spacing.lg,
+    gap: Spacing.sm,
+  },
+  statsRow: { flexDirection: 'row', gap: Spacing.sm },
   statCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: Spacing.md,
-    borderTopWidth: 3,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    padding: Spacing.md, ...Shadow.md,
   },
-  statValue: { fontSize: FontSize.lg, fontWeight: '700' },
-  statLabel: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4 },
-  listsRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
-  listColumn: { flex: 1 },
-  sectionTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.sm },
-  miniCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
-    padding: Spacing.sm,
-    marginBottom: Spacing.xs,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.primary,
-    elevation: 1,
+  statIconWrap: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
+  statValue: { fontFamily: FontFamily.extraBold, fontSize: FontSize.lg },
+  statLabel: { fontFamily: FontFamily.medium, fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 3 },
+
+  quickRow: {
+    flexDirection: 'row', gap: Spacing.sm,
+    marginHorizontal: Spacing.md, marginTop: Spacing.md,
   },
-  miniInvNo: { fontSize: 10, fontWeight: '700', color: Colors.primary },
-  miniParty: { fontSize: 11, color: Colors.textPrimary, marginTop: 1 },
-  miniAmount: { fontSize: 12, fontWeight: '700', color: Colors.primary, marginTop: 2 },
-  miniDate: { fontSize: 10, color: Colors.textMuted, marginTop: 1 },
-  emptyText: { fontSize: FontSize.sm, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.md },
-  fabRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg },
-  fabPrimary: {
-    flex: 1, backgroundColor: Colors.primary, borderRadius: 10,
-    padding: Spacing.md, alignItems: 'center', elevation: 3,
+  quickBtn: {
+    flex: 1, flexDirection: 'column', alignItems: 'center',
+    paddingVertical: 12, borderRadius: Radius.md, gap: 4, ...Shadow.sm,
   },
-  fabOutlined: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: 10,
-    padding: Spacing.md, alignItems: 'center', borderWidth: 2,
-    borderColor: Colors.success, elevation: 2,
+  quickBtnText: { fontFamily: FontFamily.bold, fontSize: 11, color: '#fff' },
+
+  section: { marginHorizontal: Spacing.md, marginTop: Spacing.lg },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
+  sectionTitle: { fontFamily: FontFamily.bold, fontSize: FontSize.md, color: Colors.textPrimary },
+  sectionLink: { fontFamily: FontFamily.semiBold, fontSize: FontSize.xs, color: Colors.primary },
+
+  emptyBox: { alignItems: 'center', paddingVertical: Spacing.xl, backgroundColor: Colors.surface, borderRadius: Radius.lg, gap: Spacing.sm },
+  emptyText: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.textMuted },
+
+  activityCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md,
+    marginBottom: Spacing.sm, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, ...Shadow.sm,
   },
-  fabText: { color: '#fff', fontWeight: '700', fontSize: FontSize.md },
+  activityIcon: { width: 38, height: 38, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  activityMid: { flex: 1 },
+  activityInvNo: { fontFamily: FontFamily.bold, fontSize: FontSize.xs, color: Colors.textSecondary },
+  activityParty: { fontFamily: FontFamily.semiBold, fontSize: FontSize.sm, color: Colors.textPrimary, marginTop: 1 },
+  activityRight: { alignItems: 'flex-end' },
+  activityAmount: { fontFamily: FontFamily.extraBold, fontSize: FontSize.md },
+  activityDate: { fontFamily: FontFamily.medium, fontSize: 10, color: Colors.textMuted, marginTop: 2 },
 });

@@ -8,8 +8,11 @@ runMigrations(db);
 export function reloadDatabase() {
   try {
     db.closeSync();
-  } catch (e) {
-    console.log('Error closing DB', e);
+  } catch (e: any) {
+    // Ignore "Access to closed resource" — expected if DB was already closed before reload
+    if (!e?.message?.includes('closed resource')) {
+      console.warn('Error closing DB', e);
+    }
   }
   db = SQLite.openDatabaseSync('billkato.db');
   db.execSync('PRAGMA foreign_keys = ON;');

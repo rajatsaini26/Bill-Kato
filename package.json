@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-google-signin/google-signin": "^16.1.2",
@@ -15,11 +17,14 @@
     "expo-constants": "~56.0.18",
     "expo-crypto": "~56.0.4",
     "expo-dev-client": "~56.0.20",
+    "expo-document-picker": "~56.0.4",
     "expo-file-system": "~56.0.8",
+    "expo-font": "~56.0.7",
     "expo-image-picker": "~56.0.18",
     "expo-print": "~56.0.4",
     "expo-router": "~56.2.11",
     "expo-sharing": "~56.0.18",
+    "expo-splash-screen": "~56.0.10",
     "expo-sqlite": "~56.0.5",
     "expo-status-bar": "~56.0.4",
     "expo-web-browser": "~56.0.5",
@@ -29,6 +34,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-vector-icons": "^10.3.0",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

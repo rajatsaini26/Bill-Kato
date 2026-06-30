@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, FlatList
+  StyleSheet, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Colors, Spacing, FontSize } from '../../../constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, FontFamily, FontSize, Radius, Shadow, Spacing } from '../../../constants/theme';
 import { createSaleInvoice, updateSaleInvoice, getSaleInvoiceById, getCustomerSuggestions } from '../../../db/queries/sales';
 import { toStorableDate, toDisplayDate } from '../../../utils/dateFormat';
 import { nextInvoiceNumber } from '../../../utils/invoiceNumber';
@@ -33,6 +34,15 @@ interface InventoryItem {
 const emptyItem = (): Item => ({
   item_name: '', quantity: '', unit: 'pcs', unit_price: '', cost_price: '', discount_pct: '0',
 });
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
 
 export default function CreateSaleInvoiceScreen() {
   const router = useRouter();
@@ -126,6 +136,7 @@ export default function CreateSaleInvoiceScreen() {
     setItems([...items, emptyItem()]);
     setEditingItemIndex(items.length);
   };
+  
   const removeItem = (index: number) => {
     if (items.length === 1) return;
     setItems(items.filter((_, i) => i !== index));
@@ -228,276 +239,333 @@ export default function CreateSaleInvoiceScreen() {
   };
 
   const getInvoiceForPdf = (id: number, invoiceNumber: string, finalAmountPaid: number) => ({
-    id,
-    invoice_number: invoiceNumber,
-    customer_name: customerName,
-    customer_phone: customerPhone,
-    invoice_date: invoiceDate,
-    subtotal,
-    discount_amount: totalDiscount,
-    tax_amount: taxAmt,
-    total: grandTotal,
-    notes,
+    id, invoice_number: invoiceNumber, customer_name: customerName, customer_phone: customerPhone,
+    invoice_date: invoiceDate, subtotal, discount_amount: totalDiscount, tax_amount: taxAmt,
+    total: grandTotal, notes,
     status: (finalAmountPaid >= grandTotal ? 'paid' : finalAmountPaid > 0 ? 'partial' : 'unpaid'),
     amount_paid: finalAmountPaid,
     payment_status: (finalAmountPaid >= grandTotal ? 'Paid' : finalAmountPaid > 0 ? 'Partial' : 'Unpaid'),
-    invoice_type: invoiceType,
-    pdf_uri: '',
-    created_at: invoiceDate,
+    invoice_type: invoiceType, pdf_uri: '', created_at: invoiceDate,
   });
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
-      {/* Type Toggle */}
-      <View style={[styles.section, { padding: Spacing.sm }]}>
-        <View style={styles.statusRow}>
-          <TouchableOpacity onPress={() => setInvoiceType('sale')} style={[styles.statusBtn, invoiceType === 'sale' && { backgroundColor: Colors.primary, borderColor: 'transparent' }]}>
-            <Text style={[styles.statusBtnText, invoiceType === 'sale' && { color: '#fff' }]}>Standard Sale</Text>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+        
+        {/* Type Toggle */}
+        <View style={styles.typeRow}>
+          <TouchableOpacity onPress={() => setInvoiceType('sale')} style={[styles.typeBtn, invoiceType === 'sale' && styles.typeBtnActiveSale]}>
+            <Ionicons name="receipt-outline" size={16} color={invoiceType === 'sale' ? '#fff' : Colors.textSecondary} />
+            <Text style={[styles.typeBtnText, invoiceType === 'sale' && { color: '#fff' }]}>Standard Sale</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setInvoiceType('return')} style={[styles.statusBtn, invoiceType === 'return' && { backgroundColor: Colors.danger, borderColor: 'transparent' }]}>
-            <Text style={[styles.statusBtnText, invoiceType === 'return' && { color: '#fff' }]}>Return Bill</Text>
+          <TouchableOpacity onPress={() => setInvoiceType('return')} style={[styles.typeBtn, invoiceType === 'return' && styles.typeBtnActiveReturn]}>
+            <Ionicons name="return-down-back" size={16} color={invoiceType === 'return' ? '#fff' : Colors.textSecondary} />
+            <Text style={[styles.typeBtnText, invoiceType === 'return' && { color: '#fff' }]}>Return Bill</Text>
           </TouchableOpacity>
         </View>
-      </View>
 
-      {/* Customer Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Customer Details</Text>
-        <View style={{ zIndex: 10 }}>
-          <TextInput 
-            style={styles.input} 
-            placeholderTextColor="#000000" 
-            placeholder="Customer Name (optional)" 
-            value={customerName} 
-            onChangeText={handleCustomerNameChange} 
-          />
-          {showCustomerSuggestions && customerSuggestions.length > 0 && (
-            <View style={styles.suggestionsContainer}>
-              {customerSuggestions.map(sugg => (
-                <TouchableOpacity key={sugg} style={styles.suggestionItem} onPress={() => selectCustomer(sugg)}>
-                  <Text style={styles.suggestionText}>{sugg}</Text>
-                </TouchableOpacity>
-              ))}
+        <Section title="Customer Details">
+          <View style={{ zIndex: 10 }}>
+            <View style={styles.inputWrap}>
+              <Ionicons name="person-outline" size={18} color={Colors.textMuted} style={styles.inputIcon} />
+              <TextInput 
+                style={styles.inputWithIcon} 
+                placeholderTextColor={Colors.textMuted} 
+                placeholder="Customer Name (optional)" 
+                value={customerName} 
+                onChangeText={handleCustomerNameChange} 
+              />
             </View>
-          )}
-        </View>
-        <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Customer Phone (optional)" value={customerPhone} onChangeText={setCustomerPhone} keyboardType="phone-pad" />
-        
-        <TouchableOpacity style={styles.dateRow} onPress={() => setShowDatePicker(true)}>
-          <Text style={styles.dateLabel}>Invoice Date:</Text>
-          <Text style={[styles.dateValue, { color: Colors.primary, textDecorationLine: 'underline' }]}>{toDisplayDate(invoiceDate)}</Text>
-        </TouchableOpacity>
-        
-        {showDatePicker && (
-          <DateTimePicker
-            value={new Date(invoiceDate)}
-            mode="date"
-            display="default"
-            onValueChange={(event, date) => {
-              setShowDatePicker(false);
-              if (date) setInvoiceDate(toStorableDate(date));
-            }}
-            onDismiss={() => setShowDatePicker(false)}
-          />
-        )}
-      </View>
-
-      {/* Items */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Items</Text>
-        {items.map((item, index) => {
-          const suggestions = inventory.filter(inv => inv.item_name.toLowerCase().includes(item.item_name.toLowerCase()) && item.item_name.length > 0 && inv.item_name !== item.item_name);
-          const isEditing = editingItemIndex === index;
+            {showCustomerSuggestions && customerSuggestions.length > 0 && (
+              <View style={styles.suggestionsContainer}>
+                {customerSuggestions.map(sugg => (
+                  <TouchableOpacity key={sugg} style={styles.suggestionItem} onPress={() => selectCustomer(sugg)}>
+                    <Text style={styles.suggestionText}>{sugg}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
           
-          if (!isEditing) {
+          <View style={styles.inputWrap}>
+            <Ionicons name="call-outline" size={18} color={Colors.textMuted} style={styles.inputIcon} />
+            <TextInput 
+              style={styles.inputWithIcon} 
+              placeholderTextColor={Colors.textMuted} 
+              placeholder="Phone Number (optional)" 
+              value={customerPhone} 
+              onChangeText={setCustomerPhone} 
+              keyboardType="phone-pad" 
+            />
+          </View>
+          
+          <TouchableOpacity style={styles.dateSelector} onPress={() => setShowDatePicker(true)}>
+            <View style={styles.dateSelectorLeft}>
+              <Ionicons name="calendar-outline" size={18} color={Colors.textMuted} />
+              <Text style={styles.dateLabel}>Invoice Date</Text>
+            </View>
+            <Text style={styles.dateValue}>{toDisplayDate(invoiceDate)}</Text>
+          </TouchableOpacity>
+          
+          {showDatePicker && (
+            <DateTimePicker
+              value={new Date(invoiceDate)}
+              mode="date" display="default"
+              onValueChange={(_, date) => {
+                setShowDatePicker(false);
+                if (date) setInvoiceDate(toStorableDate(date));
+              }}
+              onDismiss={() => setShowDatePicker(false)}
+            />
+          )}
+        </Section>
+
+        <Section title="Items">
+          {items.map((item, index) => {
+            const suggestions = inventory.filter(inv => inv.item_name.toLowerCase().includes(item.item_name.toLowerCase()) && item.item_name.length > 0 && inv.item_name !== item.item_name);
+            const isEditing = editingItemIndex === index;
+            
+            if (!isEditing) {
+              return (
+                <TouchableOpacity key={index} style={styles.compactItemCard} onPress={() => setEditingItemIndex(index)}>
+                  <View style={styles.compactItemInfo}>
+                    <Text style={styles.compactItemName}>{item.item_name || `Item ${index + 1} (Empty)`}</Text>
+                    <Text style={styles.compactItemMeta}>
+                      {item.quantity || '0'} {item.unit} × ₹{item.unit_price || '0'}
+                      {parseFloat(item.discount_pct) > 0 ? `  •  Disc: ${item.discount_pct}%` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.compactItemRight}>
+                    <Text style={styles.compactItemTotal}>
+                      ₹{calcLineTotals(parseFloat(item.quantity) || 0, parseFloat(item.unit_price) || 0, parseFloat(item.discount_pct) || 0).toFixed(2)}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                  </View>
+                </TouchableOpacity>
+              );
+            }
+
             return (
-              <TouchableOpacity key={index} style={styles.compactItemCard} onPress={() => setEditingItemIndex(index)}>
-                <View style={styles.compactItemInfo}>
-                  <Text style={styles.compactItemName}>{item.item_name || `Item ${index + 1} (Empty)`}</Text>
-                  <Text style={styles.compactItemMeta}>
-                    Qty: {item.quantity || '0'} {item.unit} | Price: ₹{item.unit_price || '0'}
-                    {parseFloat(item.discount_pct) > 0 ? ` | Disc: ${item.discount_pct}%` : ''}
-                  </Text>
+              <View key={index} style={styles.editorCard}>
+                <View style={styles.editorHeader}>
+                  <Text style={styles.editorTitle}>Editing Item {index + 1}</Text>
+                  <View style={styles.editorActions}>
+                    {items.length > 1 && (
+                      <TouchableOpacity onPress={() => removeItem(index)} style={styles.iconBtn}>
+                        <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity onPress={() => setEditingItemIndex(-1)} style={styles.doneBtn}>
+                      <Text style={styles.doneBtnText}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={styles.compactItemRight}>
-                  <Text style={styles.compactItemTotal}>
+                
+                <TextInput 
+                  style={styles.input} 
+                  placeholderTextColor={Colors.textMuted} 
+                  placeholder="Item Name *" 
+                  value={item.item_name} 
+                  onChangeText={(v) => updateItem(index, 'item_name', v)} 
+                  onFocus={() => setFocusedItemIndex(index)}
+                  onBlur={() => setTimeout(() => setFocusedItemIndex(null), 200)}
+                />
+                
+                {focusedItemIndex === index && suggestions.length > 0 && (
+                  <View style={styles.suggestionsContainer}>
+                    {suggestions.slice(0, 3).map(sugg => (
+                      <TouchableOpacity key={sugg.id} style={styles.suggestionItem} onPress={() => selectSuggestedItem(index, sugg)}>
+                        <Text style={styles.suggestionText}>{sugg.item_name}</Text>
+                        <Text style={styles.suggestionSubText}>₹{sugg.default_price} | {sugg.unit}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                <View style={styles.row}>
+                  <TextInput style={[styles.input, styles.flex1]} placeholderTextColor={Colors.textMuted} placeholder="Qty *" value={item.quantity} onChangeText={(v) => updateItem(index, 'quantity', v)} keyboardType="decimal-pad" />
+                  <View style={{ width: Spacing.sm }} />
+                  <TextInput style={[styles.input, styles.flex1]} placeholderTextColor={Colors.textMuted} placeholder="Unit (e.g. kg, pcs)" value={item.unit} onChangeText={(v) => updateItem(index, 'unit', v)} />
+                </View>
+
+                <View style={styles.row}>
+                  <TextInput style={[styles.input, styles.flex1]} placeholderTextColor={Colors.textMuted} placeholder="Unit Price ₹ *" value={item.unit_price} onChangeText={(v) => updateItem(index, 'unit_price', v)} keyboardType="decimal-pad" />
+                  <View style={{ width: Spacing.sm }} />
+                  <TextInput style={[styles.input, styles.flex1]} placeholderTextColor={Colors.textMuted} placeholder="Cost Price ₹" value={item.cost_price} onChangeText={(v) => updateItem(index, 'cost_price', v)} keyboardType="decimal-pad" />
+                </View>
+
+                <View style={styles.row}>
+                  <TextInput style={[styles.input, styles.flex1]} placeholderTextColor={Colors.textMuted} placeholder="Discount %" value={item.discount_pct} onChangeText={(v) => updateItem(index, 'discount_pct', v)} keyboardType="decimal-pad" />
+                </View>
+
+                <View style={styles.lineTotalBox}>
+                  <Text style={styles.lineTotalLabel}>Line Total</Text>
+                  <Text style={styles.lineTotalValue}>
                     ₹{calcLineTotals(parseFloat(item.quantity) || 0, parseFloat(item.unit_price) || 0, parseFloat(item.discount_pct) || 0).toFixed(2)}
                   </Text>
-                  <Text style={styles.editIcon}>✎</Text>
                 </View>
-              </TouchableOpacity>
+              </View>
             );
-          }
+          })}
+          
+          <TouchableOpacity style={styles.addItemBtn} onPress={addItem}>
+            <Ionicons name="add-circle-outline" size={18} color={Colors.primary} />
+            <Text style={styles.addItemText}>Add Another Item</Text>
+          </TouchableOpacity>
+        </Section>
 
-          return (
-            <View key={index} style={styles.itemCard}>
-              <View style={styles.itemHeader}>
-                <Text style={styles.itemIndex}>Item {index + 1}</Text>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <TouchableOpacity onPress={() => setEditingItemIndex(-1)} style={styles.doneBtn}>
-                    <Text style={styles.doneBtnText}>Done</Text>
-                  </TouchableOpacity>
-                  {items.length > 1 && (
-                    <TouchableOpacity onPress={() => removeItem(index)}>
-                      <Text style={{ color: Colors.danger, fontSize: 18 }}>🗑</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-              
-              <TextInput 
-                style={styles.input} 
-                placeholderTextColor="#000000" 
-                placeholder="Item Name *" 
-                value={item.item_name} 
-                onChangeText={(v) => updateItem(index, 'item_name', v)} 
-                onFocus={() => setFocusedItemIndex(index)}
-                onBlur={() => setTimeout(() => setFocusedItemIndex(null), 200)}
-              />
-              
-              {focusedItemIndex === index && suggestions.length > 0 && (
-                <View style={styles.suggestionsContainer}>
-                  {suggestions.slice(0, 3).map(sugg => (
-                    <TouchableOpacity key={sugg.id} style={styles.suggestionItem} onPress={() => selectSuggestedItem(index, sugg)}>
-                      <Text style={styles.suggestionText}>{sugg.item_name}</Text>
-                      <Text style={styles.suggestionSubText}>₹{sugg.default_price} | {sugg.unit}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+        <Section title="Totals & Taxes">
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Subtotal</Text>
+            <Text style={styles.totalValue}>₹{subtotal.toFixed(2)}</Text>
+          </View>
+          {totalDiscount > 0 && (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total Discount</Text>
+              <Text style={[styles.totalValue, { color: Colors.danger }]}>- ₹{totalDiscount.toFixed(2)}</Text>
+            </View>
+          )}
+          <View style={styles.taxRow}>
+            <Text style={styles.totalLabel}>Tax Rate (%)</Text>
+            <TextInput style={styles.taxInput} value={taxPct} onChangeText={setTaxPct} keyboardType="decimal-pad" placeholder="0" />
+            <Text style={styles.totalValue}>₹{taxAmt.toFixed(2)}</Text>
+          </View>
+          <View style={styles.grandTotalBox}>
+            <Text style={styles.grandTotalLabel}>Grand Total</Text>
+            <Text style={styles.grandTotalValue}>₹{grandTotal.toFixed(2)}</Text>
+          </View>
+        </Section>
 
-              <View style={styles.row}>
-                <TextInput style={[styles.input, styles.flex1]} placeholderTextColor="#000000" placeholder="Qty *" value={item.quantity} onChangeText={(v) => updateItem(index, 'quantity', v)} keyboardType="decimal-pad" />
-                <TextInput style={[styles.input, styles.flex1]} placeholderTextColor="#000000" placeholder="Unit" value={item.unit} onChangeText={(v) => updateItem(index, 'unit', v)} />
-              </View>
-              <View style={styles.row}>
-                <TextInput style={[styles.input, styles.flex1]} placeholderTextColor="#000000" placeholder="Unit Price ₹ *" value={item.unit_price} onChangeText={(v) => updateItem(index, 'unit_price', v)} keyboardType="decimal-pad" />
-                <TextInput style={[styles.input, styles.flex1]} placeholderTextColor="#000000" placeholder="Cost/Buy Price ₹" value={item.cost_price} onChangeText={(v) => updateItem(index, 'cost_price', v)} keyboardType="decimal-pad" />
-              </View>
-              <TextInput style={styles.input} placeholderTextColor="#000000" placeholder="Discount %" value={item.discount_pct} onChangeText={(v) => updateItem(index, 'discount_pct', v)} keyboardType="decimal-pad" />
-              <Text style={styles.lineTotal}>
-                Line Total: ₹{calcLineTotals(parseFloat(item.quantity) || 0, parseFloat(item.unit_price) || 0, parseFloat(item.discount_pct) || 0).toFixed(2)}
+        <Section title="Payment & Notes">
+          <Text style={styles.fieldLabel}>{invoiceType === 'return' ? 'Refund Amount Given (₹)' : 'Amount Received (₹)'}</Text>
+          <TextInput 
+            style={[styles.paymentInput, invoiceType === 'return' && { borderColor: Colors.danger, color: Colors.danger, backgroundColor: Colors.dangerLight }]} 
+            placeholderTextColor={Colors.textMuted} 
+            placeholder={invoiceType === 'return' ? '0.00 — refund paid to customer' : '0.00'} 
+            value={amountPaid} 
+            onChangeText={setAmountPaid} 
+            keyboardType="decimal-pad" 
+          />
+          
+          <View style={styles.balanceBox}>
+            <View>
+              <Text style={styles.balanceLabel}>{invoiceType === 'return' ? 'Outstanding Refund' : 'Balance Due'}</Text>
+              <Text style={[styles.balanceValue, { color: Math.max(0, grandTotal - (parseFloat(amountPaid) || 0)) > 0 ? Colors.danger : Colors.success }]}>
+                ₹{Math.max(0, grandTotal - (parseFloat(amountPaid) || 0)).toFixed(2)}
               </Text>
             </View>
-          );
-        })}
-        <TouchableOpacity style={styles.addItemBtn} onPress={addItem}>
-          <Text style={styles.addItemText}>＋ Add Item</Text>
+            <View style={[styles.statusPill, { backgroundColor: (parseFloat(amountPaid) || 0) >= grandTotal ? Colors.successLight : (parseFloat(amountPaid) || 0) > 0 ? Colors.warningLight : Colors.dangerLight }]}>
+              <Text style={[styles.statusPillText, { color: (parseFloat(amountPaid) || 0) >= grandTotal ? Colors.success : (parseFloat(amountPaid) || 0) > 0 ? Colors.warning : Colors.danger }]}>
+                {(parseFloat(amountPaid) || 0) >= grandTotal
+                  ? (invoiceType === 'return' ? 'REFUNDED' : 'PAID')
+                  : (parseFloat(amountPaid) || 0) > 0 ? 'PARTIAL' : (invoiceType === 'return' ? 'PENDING' : 'UNPAID')}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.fieldLabel}>Notes / Terms</Text>
+          <TextInput
+            style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+            placeholderTextColor={Colors.textMuted}
+            placeholder="Optional notes for customer"
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+          />
+        </Section>
+
+      </ScrollView>
+
+      {/* Floating Action Bar */}
+      <View style={styles.fabBar}>
+        <TouchableOpacity style={styles.btnOutline} onPress={() => save(false)} disabled={loading}>
+          {loading ? <ActivityIndicator color={Colors.primary} /> : <Text style={styles.btnOutlineText}>Save Only</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.btnPrimary} onPress={() => save(true)} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : (
+            <>
+              <Ionicons name="share-social-outline" size={18} color="#fff" />
+              <Text style={styles.btnPrimaryText}>Save & Share</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
-
-      {/* Notes */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notes</Text>
-        <TextInput
-          style={[styles.input, { height: 70, textAlignVertical: 'top' }]}
-          placeholderTextColor="#000000"
-          placeholder="Notes (optional)"
-          value={notes}
-          onChangeText={setNotes}
-          multiline
-        />
-      </View>
-
-      {/* Totals */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Totals</Text>
-        <View style={styles.totalRow}><Text style={styles.totalLabel}>Subtotal</Text><Text style={styles.totalValue}>₹{subtotal.toFixed(2)}</Text></View>
-        <View style={styles.totalRow}><Text style={styles.totalLabel}>Total Discount</Text><Text style={[styles.totalValue, { color: Colors.danger }]}>- ₹{totalDiscount.toFixed(2)}</Text></View>
-        <View style={styles.taxRow}>
-          <Text style={styles.totalLabel}>Tax %</Text>
-          <TextInput style={styles.taxInput} value={taxPct} onChangeText={setTaxPct} keyboardType="decimal-pad" />
-          <Text style={styles.totalValue}>₹{taxAmt.toFixed(2)}</Text>
-        </View>
-        <View style={[styles.totalRow, styles.grandTotalRow]}>
-          <Text style={styles.grandTotalLabel}>Grand Total</Text>
-          <Text style={styles.grandTotalValue}>₹{grandTotal.toFixed(2)}</Text>
-        </View>
-      </View>
-
-      {/* Status */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Payment Details</Text>
-        <TextInput 
-          style={[styles.input, { borderColor: Colors.primary, borderWidth: 1.5, fontSize: FontSize.md, marginTop: 8 }]} 
-          placeholderTextColor="#6b7280" 
-          placeholder="Amount Received ₹" 
-          value={amountPaid} 
-          onChangeText={setAmountPaid} 
-          keyboardType="decimal-pad" 
-        />
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Balance Due</Text>
-          <Text style={[styles.totalValue, { color: Colors.danger }]}>₹{Math.max(0, grandTotal - (parseFloat(amountPaid) || 0)).toFixed(2)}</Text>
-        </View>
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Status</Text>
-          <Text style={[styles.totalValue, { 
-            color: (parseFloat(amountPaid) || 0) >= grandTotal ? Colors.success : (parseFloat(amountPaid) || 0) > 0 ? Colors.warning : Colors.danger 
-          }]}>
-            {(parseFloat(amountPaid) || 0) >= grandTotal ? 'Paid' : (parseFloat(amountPaid) || 0) > 0 ? 'Partial' : 'Unpaid'}
-          </Text>
-        </View>
-      </View>
-
-      {/* Buttons */}
-      <View style={styles.btnRow}>
-        <TouchableOpacity style={styles.btnSave} onPress={() => save(false)} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Save Only</Text>}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnShare} onPress={() => save(true)} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Save & Share PDF</Text>}
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  section: { backgroundColor: Colors.surface, margin: Spacing.md, borderRadius: 12, padding: Spacing.md, elevation: 1 },
-  sectionTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.sm },
-  input: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 10,
-    fontSize: FontSize.sm, color: Colors.textPrimary, backgroundColor: Colors.background,
-    marginBottom: Spacing.sm,
-  },
-  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dateLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  dateValue: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: '600' },
-  itemCard: { borderWidth: 1, borderColor: Colors.border, borderRadius: 10, padding: Spacing.sm, marginBottom: Spacing.sm, backgroundColor: Colors.background, zIndex: 1 },
-  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  itemIndex: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.primary },
-  doneBtn: { backgroundColor: Colors.success, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
-  doneBtnText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  compactItemCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 12, marginBottom: Spacing.sm },
+  
+  typeRow: { flexDirection: 'row', padding: Spacing.md, gap: Spacing.sm },
+  typeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: Radius.md, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  typeBtnActiveSale: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  typeBtnActiveReturn: { backgroundColor: Colors.danger, borderColor: Colors.danger },
+  typeBtnText: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.textSecondary },
+
+  section: { backgroundColor: Colors.surface, marginHorizontal: Spacing.md, marginBottom: Spacing.md, borderRadius: Radius.lg, padding: Spacing.md, ...Shadow.sm },
+  sectionTitle: { fontFamily: FontFamily.extraBold, fontSize: FontSize.md, color: Colors.textPrimary, marginBottom: Spacing.md },
+  
+  inputWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.md, backgroundColor: Colors.background, marginBottom: Spacing.sm },
+  inputIcon: { paddingLeft: 14, paddingRight: 8 },
+  inputWithIcon: { flex: 1, paddingVertical: 12, paddingRight: 14, fontSize: FontSize.sm, fontFamily: FontFamily.medium, color: Colors.textPrimary },
+  
+  input: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: FontSize.sm, fontFamily: FontFamily.medium, color: Colors.textPrimary, backgroundColor: Colors.background, marginBottom: Spacing.sm },
+  fieldLabel: { fontFamily: FontFamily.semiBold, fontSize: 11, color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, marginTop: Spacing.xs },
+  
+  dateSelector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: 14, borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.md, backgroundColor: Colors.background },
+  dateSelectorLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dateLabel: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.textSecondary },
+  dateValue: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.primary },
+  
+  compactItemCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surfaceAlt, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm },
   compactItemInfo: { flex: 1 },
-  compactItemName: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
-  compactItemMeta: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  compactItemName: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.textPrimary },
+  compactItemMeta: { fontFamily: FontFamily.medium, fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4 },
   compactItemRight: { alignItems: 'flex-end', flexDirection: 'row', gap: 8 },
-  compactItemTotal: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.primary },
-  editIcon: { fontSize: 16, color: Colors.textSecondary },
-  row: { flexDirection: 'row', gap: Spacing.sm },
+  compactItemTotal: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.primary },
+  
+  editorCard: { borderWidth: 1.5, borderColor: Colors.primaryLight, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md, backgroundColor: Colors.surface, zIndex: 1 },
+  editorHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
+  editorTitle: { fontFamily: FontFamily.bold, fontSize: FontSize.xs, color: Colors.primary, textTransform: 'uppercase', letterSpacing: 0.5 },
+  editorActions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  iconBtn: { padding: 4 },
+  doneBtn: { backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.pill },
+  doneBtnText: { fontFamily: FontFamily.bold, fontSize: 11, color: '#fff' },
+  lineTotalBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.primaryLight, padding: 12, borderRadius: Radius.md, marginTop: 4 },
+  lineTotalLabel: { fontFamily: FontFamily.semiBold, fontSize: FontSize.xs, color: Colors.primary },
+  lineTotalValue: { fontFamily: FontFamily.extraBold, fontSize: FontSize.md, color: Colors.primary },
+  
+  row: { flexDirection: 'row' },
   flex1: { flex: 1 },
-  lineTotal: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.primary, textAlign: 'right' },
-  addItemBtn: { borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 8, padding: 10, alignItems: 'center', borderStyle: 'dashed' },
-  addItemText: { color: Colors.primary, fontWeight: '700', fontSize: FontSize.sm },
-  suggestionsContainer: { backgroundColor: '#f9fafb', borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', marginBottom: Spacing.sm, marginTop: -Spacing.sm, elevation: 2 },
-  suggestionItem: { padding: 10, borderBottomWidth: 1, borderBottomColor: '#e5e7eb', flexDirection: 'row', justifyContent: 'space-between' },
-  suggestionText: { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: '600' },
-  suggestionSubText: { fontSize: FontSize.xs, color: Colors.textSecondary },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  totalLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
-  totalValue: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
-  taxRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
-  taxInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: 6, padding: 4, width: 60, textAlign: 'center', fontSize: FontSize.sm },
-  grandTotalRow: { borderTopWidth: 1, borderTopColor: Colors.border, marginTop: 6, paddingTop: 6 },
-  grandTotalLabel: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
-  grandTotalValue: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.primary },
-  statusRow: { flexDirection: 'row', gap: Spacing.sm },
-  statusBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
-  statusBtnText: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textSecondary },
-  btnRow: { flexDirection: 'row', gap: Spacing.sm, margin: Spacing.md },
-  btnSave: { flex: 1, backgroundColor: Colors.textSecondary, borderRadius: 10, padding: Spacing.md, alignItems: 'center' },
-  btnShare: { flex: 1, backgroundColor: Colors.primary, borderRadius: 10, padding: Spacing.md, alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.sm },
+  
+  addItemBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed' },
+  addItemText: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.primary },
+  
+  suggestionsContainer: { backgroundColor: Colors.surface, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, marginBottom: Spacing.sm, marginTop: -Spacing.xs, ...Shadow.md },
+  suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.border, flexDirection: 'row', justifyContent: 'space-between' },
+  suggestionText: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.textPrimary },
+  suggestionSubText: { fontFamily: FontFamily.medium, fontSize: FontSize.xs, color: Colors.textSecondary },
+  
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
+  totalLabel: { fontFamily: FontFamily.medium, fontSize: FontSize.sm, color: Colors.textSecondary },
+  totalValue: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.textPrimary },
+  taxRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
+  taxInput: { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md, paddingVertical: 4, paddingHorizontal: 8, width: 70, textAlign: 'center', fontFamily: FontFamily.bold, fontSize: FontSize.sm },
+  grandTotalBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.surfaceAlt, padding: Spacing.md, borderRadius: Radius.md, marginTop: Spacing.sm },
+  grandTotalLabel: { fontFamily: FontFamily.extraBold, fontSize: FontSize.md, color: Colors.textPrimary },
+  grandTotalValue: { fontFamily: FontFamily.extraBold, fontSize: FontSize.xl, color: Colors.primary },
+  
+  paymentInput: { borderWidth: 2, borderColor: Colors.primary, borderRadius: Radius.md, paddingHorizontal: 16, paddingVertical: 14, fontSize: FontSize.lg, fontFamily: FontFamily.bold, color: Colors.primary, backgroundColor: Colors.primaryLight, marginBottom: Spacing.md },
+  balanceBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  balanceLabel: { fontFamily: FontFamily.medium, fontSize: FontSize.xs, color: Colors.textSecondary },
+  balanceValue: { fontFamily: FontFamily.extraBold, fontSize: FontSize.lg },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radius.pill },
+  statusPillText: { fontFamily: FontFamily.bold, fontSize: 10 },
+  
+  fabBar: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', backgroundColor: Colors.surface, padding: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border, ...Shadow.lg, gap: Spacing.sm },
+  btnOutline: { flex: 1, paddingVertical: 14, borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  btnOutlineText: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: Colors.primary },
+  btnPrimary: { flex: 2, flexDirection: 'row', gap: 8, paddingVertical: 14, borderRadius: Radius.md, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  btnPrimaryText: { fontFamily: FontFamily.bold, fontSize: FontSize.sm, color: '#fff' },
 });

@@ -4,7 +4,19 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useAppStore } from '../store/useAppStore';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+} from '@expo-google-fonts/inter';
+import * as SplashScreen from 'expo-splash-screen';
 import '../db/client';
+import { Colors } from '../constants/theme';
+
+SplashScreen.preventAutoHideAsync();
 
 GoogleSignin.configure({
   scopes: ['https://www.googleapis.com/auth/drive.file'],
@@ -16,9 +28,22 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
 
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
   useEffect(() => {
     const inAuthGroup = segments[0] === '(tabs)' || segments[0] === 'invoice' || segments[0] === 'settings';
-    
     if (!isLoggedIn && inAuthGroup) {
       router.replace('/login');
     } else if (isLoggedIn && segments[0] === 'login') {
@@ -38,20 +63,22 @@ export default function RootLayout() {
         if (!lastBackup || !lastBackup.backed_up_at.startsWith(today)) {
           GoogleSignin.signInSilently()
             .then(() => GoogleSignin.getTokens())
-            .then(({ accessToken }) => {
+            .then(({ accessToken }: { accessToken: string }) => {
               if (accessToken) {
                 const { backupToDrive } = require('../services/driveBackup');
                 return backupToDrive(accessToken);
               }
             })
             .then(() => console.log('Auto-backup successful'))
-            .catch(e => console.log('Auto-backup skipped/failed:', e));
+            .catch((e: any) => console.log('Auto-backup skipped/failed:', e));
         }
       } catch (e) {
         console.log('Error checking backup', e);
       }
     }
   }, [isLoggedIn]);
+
+  if (!fontsLoaded) return null;
 
   return (
     <SafeAreaProvider>
@@ -64,8 +91,9 @@ export default function RootLayout() {
           options={{
             headerShown: true,
             title: 'New Sale Invoice',
-            headerStyle: { backgroundColor: '#1A56DB' },
+            headerStyle: { backgroundColor: Colors.primary },
             headerTintColor: '#fff',
+            headerTitleStyle: { fontFamily: 'Inter_700Bold' },
           }}
         />
         <Stack.Screen
@@ -73,8 +101,9 @@ export default function RootLayout() {
           options={{
             headerShown: true,
             title: 'Sale Invoice',
-            headerStyle: { backgroundColor: '#1A56DB' },
+            headerStyle: { backgroundColor: Colors.primary },
             headerTintColor: '#fff',
+            headerTitleStyle: { fontFamily: 'Inter_700Bold' },
           }}
         />
         <Stack.Screen
@@ -82,8 +111,9 @@ export default function RootLayout() {
           options={{
             headerShown: true,
             title: 'New Purchase Invoice',
-            headerStyle: { backgroundColor: '#0E9F6E' },
+            headerStyle: { backgroundColor: Colors.success },
             headerTintColor: '#fff',
+            headerTitleStyle: { fontFamily: 'Inter_700Bold' },
           }}
         />
         <Stack.Screen
@@ -91,8 +121,9 @@ export default function RootLayout() {
           options={{
             headerShown: true,
             title: 'Purchase Invoice',
-            headerStyle: { backgroundColor: '#0E9F6E' },
+            headerStyle: { backgroundColor: Colors.success },
             headerTintColor: '#fff',
+            headerTitleStyle: { fontFamily: 'Inter_700Bold' },
           }}
         />
         <Stack.Screen
@@ -100,8 +131,9 @@ export default function RootLayout() {
           options={{
             headerShown: true,
             title: 'Settings',
-            headerStyle: { backgroundColor: '#1A56DB' },
+            headerStyle: { backgroundColor: Colors.primary },
             headerTintColor: '#fff',
+            headerTitleStyle: { fontFamily: 'Inter_700Bold' },
           }}
         />
       </Stack>

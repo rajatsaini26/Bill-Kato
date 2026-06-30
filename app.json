@@ -25,7 +25,7 @@
         "INTERNET"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#1A56DB",
+        "backgroundColor": "#1d4ed8",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -41,8 +41,11 @@
       "expo-sharing",
       "expo-web-browser",
       "expo-router",
+      "expo-document-picker",
       "@react-native-google-signin/google-signin",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-splash-screen"
     ]
   }
 }
