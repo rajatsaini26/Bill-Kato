@@ -35,7 +35,7 @@ Welcome to **Bill Kato**! Built with React Native (Expo) and SQLite, this mobile
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/bill-kato.git
+   git clone https://github.com/rajatsaini26/Bill-Kato.git
    cd bill-kato
    ```
 
